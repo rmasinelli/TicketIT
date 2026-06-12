@@ -728,6 +728,11 @@ function Login({ onSignIn }) {
 // SHELL
 // ═══════════════════════════════════════════════════════════════
 function Shell({session,onLogout,view,setView,unread,children}) {
+  const [navOpen,setNavOpen] = useState(false);
+
+  // Close drawer when navigating
+  function nav(id){ setView(id); setNavOpen(false); }
+
   const navItems=[
     {id:"dashboard",  label:"Dashboard",    roles:["student","tech","admin"], icon:"⊞"},
     {id:"submit",     label:"New Ticket",   roles:["student","tech","admin"], icon:"＋"},
@@ -741,48 +746,112 @@ function Shell({session,onLogout,view,setView,unread,children}) {
     {id:"admin",      label:"Admin Panel",  roles:["admin"],                  icon:"⚙"},
   ].filter(n=>n.roles.includes(session.role));
 
+  const sidebarContent = (
+    <>
+      <div style={{padding:"24px 20px 12px"}}>
+        <div style={{fontFamily:"'Raleway',sans-serif",fontSize:18,fontWeight:800,color:"#F0EDE8",letterSpacing:"-0.01em"}}>Ember<span style={{color:"#E8922E"}}>.</span></div>
+        <div style={{fontSize:10,color:"#6A5848",letterSpacing:"0.18em",textTransform:"uppercase",marginTop:2}}>Cinder</div>
+      </div>
+      <div style={{padding:"0 12px 12px",display:"flex",gap:4,flexWrap:"wrap"}}>
+        {(session.cohort==="all" ? COURSES : COURSES.filter(c=>c.cohort===session.cohort||session.cohort==="cyber"&&c.id==="cyber")).map(c=>(
+          <span key={c.id} style={{fontSize:9,background:c.color+"18",color:c.color,border:`1px solid ${c.color}33`,borderRadius:3,padding:"2px 6px",fontWeight:700,letterSpacing:"0.06em"}}>
+            {c.icon} {c.id.toUpperCase()}
+          </span>
+        ))}
+      </div>
+      <nav style={{padding:"4px 12px",flex:1}}>
+        {navItems.map(n=>(
+          <button key={n.id} onClick={()=>nav(n.id)}
+            style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"11px 12px",borderRadius:8,
+              background:view===n.id?"#1A1A1A":"transparent",
+              border:view===n.id?"1px solid #242424":"1px solid transparent",
+              color:view===n.id?"#F0EDE8":"#8A7868",
+              fontSize:13,cursor:"pointer",textAlign:"left",marginBottom:2,transition:"all 0.15s"}}>
+            <span style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:14}}>{n.icon}</span>{n.label}</span>
+            {n.id==="inbox"&&unread>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:10,fontSize:10,padding:"1px 6px",fontWeight:700}}>{unread}</span>}
+          </button>
+        ))}
+      </nav>
+      <div style={{padding:"16px 20px",borderTop:"1px solid #242424"}}>
+        <div style={{fontSize:12,color:"#B8A898",fontWeight:500}}>{session.name}</div>
+        <div style={{fontSize:10,marginTop:3,display:"flex",gap:6,flexWrap:"wrap"}}>
+          <span style={{background:ROLE_COLOR[session.role]+"22",color:ROLE_COLOR[session.role],padding:"1px 6px",borderRadius:3,textTransform:"uppercase",letterSpacing:"0.08em",fontSize:9,fontWeight:700}}>{session.role}</span>
+          {session.cohort&&session.cohort!=="all"&&<span style={{color:"#4A3828",fontSize:9}}>{session.cohort==="net-hw"?"NET + HW":"CYBER"}</span>}
+        </div>
+        <button onClick={onLogout} style={{marginTop:12,fontSize:11,color:"#6A5848",background:"none",border:"none",cursor:"pointer",padding:0}}>← Sign out</button>
+      </div>
+    </>
+  );
+
   return (
     <div style={{display:"flex",minHeight:"100vh",background:"#0D0D0D",fontFamily:"'Inter',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Raleway:wght@700;800&display=swap');
-        *{box-sizing:border-box} ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:#0D0D0D} ::-webkit-scrollbar-thumb{background:#242424;border-radius:3px}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Raleway:wght@700;800&display=swap');
+        *{box-sizing:border-box}
+        ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:#0D0D0D} ::-webkit-scrollbar-thumb{background:#242424;border-radius:3px}
         input:focus,textarea:focus,select:focus{outline:2px solid #E8922E !important;outline-offset:2px;}
+        input,textarea,select,button{-webkit-tap-highlight-color:transparent;}
+
+        /* ── Responsive layout classes ── */
+        .mob-topbar{display:none;}
+        .mob-overlay{display:none;position:fixed;inset:0;background:#000b;z-index:190;}
+        .shell-sidebar{width:224px;background:#0D0D0D;border-right:1px solid #242424;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex-shrink:0;}
+        .shell-content{flex:1;overflow-y:auto;padding:32px;}
+
+        .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;}
+        .course-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+        .detail-grid{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start;}
+        .lab-grid{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;}
+        .scenario-editor-grid{display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start;}
+        .scenario-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+        .kb-layout-grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start;}
+        .ir-grid{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start;}
+        .new-ticket-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+        @media(max-width:767px){
+          .mob-topbar{display:flex;position:fixed;top:0;left:0;right:0;height:54px;background:#0D0D0D;border-bottom:1px solid #242424;align-items:center;justify-content:space-between;padding:0 16px;z-index:200;}
+          .mob-overlay.open{display:block;}
+          .shell-sidebar{position:fixed;top:0;left:0;z-index:210;height:100vh;width:272px;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 32px #000;}
+          .shell-sidebar.open{transform:translateX(0);}
+          .shell-content{padding:16px;padding-top:70px;}
+          .stats-grid{grid-template-columns:repeat(2,1fr)!important;}
+          .course-grid{grid-template-columns:1fr!important;}
+          .detail-grid{grid-template-columns:1fr!important;}
+          .lab-grid{grid-template-columns:1fr!important;}
+          .scenario-editor-grid{grid-template-columns:1fr!important;}
+          .scenario-form-grid{grid-template-columns:1fr!important;}
+          .kb-layout-grid{grid-template-columns:1fr!important;}
+          .ir-grid{grid-template-columns:1fr!important;}
+          .new-ticket-grid{grid-template-columns:1fr!important;}
+          .tkt-row-hide{display:none!important;}
+        }
       `}</style>
-      <div style={{width:224,background:"#0D0D0D",borderRight:"1px solid #242424",display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh"}}>
-        <div style={{padding:"24px 20px 12px"}}>
-          <div style={{fontFamily:"'Raleway',sans-serif",fontSize:18,fontWeight:800,color:"#F0EDE8",letterSpacing:"-0.01em"}}>Ember<span style={{color:"#E8922E"}}>.</span></div>
-          <div style={{fontSize:10,color:"#6A5848",letterSpacing:"0.18em",textTransform:"uppercase",marginTop:2}}>Cinder</div>
+
+      {/* Mobile top bar */}
+      <div className="mob-topbar">
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>setNavOpen(o=>!o)}
+            style={{background:"none",border:"1px solid #2A2A2A",color:"#8A7868",borderRadius:6,width:36,height:36,fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
+            {navOpen?"✕":"☰"}
+          </button>
+          <div style={{fontFamily:"'Raleway',sans-serif",fontSize:18,fontWeight:800,color:"#F0EDE8"}}>Ember<span style={{color:"#E8922E"}}>.</span></div>
         </div>
-        {/* Course pills */}
-        <div style={{padding:"0 12px 12px",display:"flex",gap:4,flexWrap:"wrap"}}>
-          {(session.cohort==="all" ? COURSES : COURSES.filter(c=>c.cohort===session.cohort||session.cohort==="cyber"&&c.id==="cyber")).map(c=>(
-            <span key={c.id} style={{fontSize:9,background:c.color+"18",color:c.color,border:`1px solid ${c.color}33`,borderRadius:3,padding:"2px 6px",fontWeight:700,letterSpacing:"0.06em"}}>
-              {c.icon} {c.id.toUpperCase()}
-            </span>
-          ))}
-        </div>
-        <nav style={{padding:"4px 12px",flex:1}}>
-          {navItems.map(n=>(
-            <button key={n.id} onClick={()=>setView(n.id)}
-              style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"9px 12px",borderRadius:8,
-                background:view===n.id?"#1A1A1A":"transparent",
-                border:view===n.id?"1px solid #242424":"1px solid transparent",
-                color:view===n.id?"#F0EDE8":"#8A7868",
-                fontSize:13,cursor:"pointer",textAlign:"left",marginBottom:2,transition:"all 0.15s"}}>
-              <span style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:14}}>{n.icon}</span>{n.label}</span>
-              {n.id==="inbox"&&unread>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:10,fontSize:10,padding:"1px 6px",fontWeight:700}}>{unread}</span>}
-            </button>
-          ))}
-        </nav>
-        <div style={{padding:"16px 20px",borderTop:"1px solid #242424"}}>
-          <div style={{fontSize:12,color:"#B8A898",fontWeight:500}}>{session.name}</div>
-          <div style={{fontSize:10,marginTop:3,display:"flex",gap:6,flexWrap:"wrap"}}>
-            <span style={{background:ROLE_COLOR[session.role]+"22",color:ROLE_COLOR[session.role],padding:"1px 6px",borderRadius:3,textTransform:"uppercase",letterSpacing:"0.08em",fontSize:9,fontWeight:700}}>{session.role}</span>
-            {session.cohort&&session.cohort!=="all"&&<span style={{color:"#4A3828",fontSize:9}}>{session.cohort==="net-hw"?"NET + HW":"CYBER"}</span>}
-          </div>
-          <button onClick={onLogout} style={{marginTop:12,fontSize:11,color:"#6A5848",background:"none",border:"none",cursor:"pointer",padding:0}}>← Sign out</button>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {unread>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:10,fontSize:10,padding:"2px 7px",fontWeight:700}}>{unread}</span>}
+          <span style={{fontSize:11,color:"#6A5848"}}>{session.name.split(" ")[0]}</span>
         </div>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:32}}>{children}</div>
+
+      {/* Overlay */}
+      <div className={`mob-overlay${navOpen?" open":""}`} onClick={()=>setNavOpen(false)} />
+
+      {/* Sidebar */}
+      <div className={`shell-sidebar${navOpen?" open":""}`}>
+        {sidebarContent}
+      </div>
+
+      {/* Main content */}
+      <div className="shell-content">{children}</div>
     </div>
   );
 }
@@ -856,7 +925,7 @@ function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTic
       )}
 
       {/* Stats */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28}}>
+      <div className="stats-grid">
         {[
           {label:"Open",        val:stats.open,        color:"#3b82f6"},
           {label:"In Progress", val:stats.inProgress,  color:"#f59e0b"},
@@ -874,7 +943,7 @@ function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTic
       {session.role==="admin"&&(
         <div style={{marginBottom:28}}>
           <SectionLabel>Course Overview</SectionLabel>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+          <div className="course-grid">
             {COURSES.map(c=>{
               const cTickets=tickets.filter(t=>t.courseId===c.id);
               const open=cTickets.filter(t=>t.status==="Open").length;
@@ -1066,7 +1135,7 @@ function MyTickets({session,tickets,users,assignedTickets,initialAssigned,onCons
             </div>
           </div>
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24,alignItems:"start"}}>
+          <div className="detail-grid">
             {/* Main column */}
             <div>
               {/* Email-style description */}
@@ -1414,7 +1483,7 @@ function TicketDetail({ticket,session,users,onUpdate,onBack}) {
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24,alignItems:"start"}}>
+      <div className="detail-grid">
 
         {/* ── Main column ── */}
         <div>
@@ -1678,7 +1747,7 @@ function LabManager({session,classStudents,customScenarios,onActivate}) {
         })}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:20,alignItems:"start"}}>
+      <div className="lab-grid">
 
         {/* ── Left: Class panel ── */}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1916,11 +1985,11 @@ function ScenarioLibrary({customScenarios,onSave,onDelete,onImport}) {
         <PageTitle title={editing==="new"?"New Custom Scenario":"Edit Scenario"}
           sub="Custom scenarios are saved to Supabase and available in Lab Manager." />
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:20,alignItems:"start"}}>
+        <div className="scenario-editor-grid">
           {/* Form */}
           <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,padding:"24px"}}>
 
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+            <div className="scenario-form-grid">
               <div style={{gridColumn:"1/-1"}}>
                 <Field label="Title — Subject line the student sees">
                   <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}
@@ -2305,7 +2374,7 @@ function Inbox({session,notifs,onRead,onReadAll,onOpen}) {
         {unread>0&&<button onClick={onReadAll} style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>Mark all read</button>}
       </div>
       {mine.length===0?<EmptyState msg="Your inbox is empty." />:(
-        <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:16,alignItems:"start"}}>
+        <div className="kb-layout-grid">
           <div style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:12,overflow:"hidden"}}>
             {mine.map((n,i)=>(
               <div key={n.id} onClick={()=>{setSel(n.id);if(!n.read)onRead(n.id);}}
@@ -2573,101 +2642,96 @@ function timeAgo(iso) {
 const PRI_RAIL = { Critical:"#ef4444", High:"#f97316", Medium:"#f59e0b", Low:"#6b7280" };
 
 function TicketTable({tickets,users,session,onOpen,showAssigned=false,showSLA=false,showCourse=false}) {
-  function nameOf(id){return users.find(u=>u.id===id)?.name||"—";}
+  const [isMobile,setIsMobile] = useState(()=>window.innerWidth<768);
+  useEffect(()=>{
+    const fn=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener("resize",fn);
+    return ()=>window.removeEventListener("resize",fn);
+  },[]);
+
   function initials(name){return name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();}
+
+  if(isMobile) return (
+    <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} .tkt-card:active{background:#1E1A17;}`}</style>
+      {tickets.map((t,i)=>{
+        const course=courseById(t.courseId);
+        const sla=slaInfo(t.created,t.priority,t.status);
+        const requester=PERSON_BY_ID[t.requesterId];
+        const orgColor=requester?(ORG_COLOR[requester.org]||"#6A5848"):"#6A5848";
+        const railColor=PRI_RAIL[t.priority]||"#6b7280";
+        const isResolved=t.status==="Resolved"||t.status==="Closed";
+        return (
+          <div key={t.id} className="tkt-card" onClick={()=>onOpen(t.id)}
+            style={{display:"flex",gap:0,borderBottom:i<tickets.length-1?"1px solid #1A1A1A":"none",cursor:"pointer",background:"transparent",transition:"background 0.1s"}}>
+            <div style={{width:4,background:isResolved?"#2A2A2A":railColor,flexShrink:0,opacity:isResolved?0.3:1}}/>
+            <div style={{flex:1,padding:"12px 14px",minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                <span style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:"#4A3828"}}>{t.id}</span>
+                {course&&showCourse&&<span style={{fontSize:9,color:course.color,fontWeight:700}}>{course.icon} {course.id.toUpperCase()}</span>}
+                {sla?.breached&&<span style={{fontSize:9,color:"#ef4444",fontWeight:700,animation:"pulse 1.2s infinite"}}>● BREACH</span>}
+              </div>
+              <div style={{fontSize:13,fontWeight:500,color:isResolved?"#6A5848":"#EDE9E3",marginBottom:6,lineHeight:1.3}}>{t.title}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                {badge(t.status,STATUS_COLOR[t.status])}
+                <span style={{fontSize:10,fontWeight:700,color:railColor}}>{t.priority}</span>
+                {requester&&<span style={{fontSize:11,color:orgColor}}>{requester.name}</span>}
+                <span style={{fontSize:10,color:"#3A3A3A",marginLeft:"auto"}}>{timeAgo(t.created)}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",padding:"0 12px",color:"#3A3A3A",fontSize:14,flexShrink:0}}>›</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} .tkt-row:hover{background:#1E1A17 !important;}`}</style>
-      {/* Column headers */}
       <div style={{display:"grid",gridTemplateColumns:`4px 120px 1fr ${showCourse?"80px ":""}160px 100px 110px${showAssigned?" 110px":""}${showSLA?" 90px":""} 90px`,
-        borderBottom:"1px solid #1E1E1E",padding:"0 0 0 0"}}>
+        borderBottom:"1px solid #1E1E1E"}}>
         {["","#","Subject",showCourse&&"Course","Contact","Priority","Status",showAssigned&&"Assigned",showSLA&&"SLA","Age"].filter(v=>v!==false).map((h,i)=>(
           <div key={i} style={{padding:"10px 14px",fontSize:10,fontWeight:600,color:"#4A4038",textTransform:"uppercase",letterSpacing:"0.1em"}}>{h}</div>
         ))}
       </div>
 
       {tickets.map(t=>{
-        const course = courseById(t.courseId);
-        const sla = slaInfo(t.created, t.priority, t.status);
-        const requester = PERSON_BY_ID[t.requesterId];
-        const orgColor = requester ? (ORG_COLOR[requester.org]||"#6A5848") : "#6A5848";
-        const assigned = t.assignedTo ? users.find(u=>u.id===t.assignedTo) : null;
-        const railColor = PRI_RAIL[t.priority] || "#6b7280";
-        const isResolved = t.status==="Resolved"||t.status==="Closed";
-
+        const course=courseById(t.courseId);
+        const sla=slaInfo(t.created,t.priority,t.status);
+        const requester=PERSON_BY_ID[t.requesterId];
+        const orgColor=requester?(ORG_COLOR[requester.org]||"#6A5848"):"#6A5848";
+        const assigned=t.assignedTo?users.find(u=>u.id===t.assignedTo):null;
+        const railColor=PRI_RAIL[t.priority]||"#6b7280";
+        const isResolved=t.status==="Resolved"||t.status==="Closed";
         return (
           <div key={t.id} className="tkt-row" onClick={()=>onOpen(t.id)}
             style={{display:"grid",gridTemplateColumns:`4px 120px 1fr ${showCourse?"80px ":""}160px 100px 110px${showAssigned?" 110px":""}${showSLA?" 90px":""} 90px`,
-              borderBottom:"1px solid #1A1A1A",cursor:"pointer",background:"transparent",
-              transition:"background 0.1s",alignItems:"center"}}>
-
-            {/* Priority rail */}
-            <div style={{height:"100%",background:isResolved?"#2A2A2A":railColor,opacity:isResolved?0.3:1,alignSelf:"stretch"}} />
-
-            {/* Ticket ID */}
+              borderBottom:"1px solid #1A1A1A",cursor:"pointer",background:"transparent",transition:"background 0.1s",alignItems:"center"}}>
+            <div style={{height:"100%",background:isResolved?"#2A2A2A":railColor,opacity:isResolved?0.3:1,alignSelf:"stretch"}}/>
             <div style={{padding:"13px 14px"}}>
-              <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#6A5848",letterSpacing:"0.02em"}}>{t.id}</div>
-              {sla?.breached && <div style={{fontSize:9,color:"#ef4444",fontWeight:700,letterSpacing:"0.08em",marginTop:2,animation:"pulse 1.2s infinite"}}>● SLA BREACH</div>}
+              <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#6A5848"}}>{t.id}</div>
+              {sla?.breached&&<div style={{fontSize:9,color:"#ef4444",fontWeight:700,marginTop:2,animation:"pulse 1.2s infinite"}}>● SLA BREACH</div>}
             </div>
-
-            {/* Subject + categories */}
             <div style={{padding:"13px 14px",minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:isResolved?"#6A5848":"#EDE9E3",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>
-              {t.categories?.length>0 && (
-                <div style={{display:"flex",gap:4,marginTop:4,flexWrap:"wrap"}}>
-                  {t.categories.slice(0,2).map(c=><span key={c} style={{fontSize:9,background:"#1E1E1E",color:"#6A5848",borderRadius:3,padding:"1px 5px",letterSpacing:"0.04em"}}>{c}</span>)}
-                </div>
-              )}
+              {t.categories?.length>0&&<div style={{display:"flex",gap:4,marginTop:4,flexWrap:"wrap"}}>{t.categories.slice(0,2).map(c=><span key={c} style={{fontSize:9,background:"#1E1E1E",color:"#6A5848",borderRadius:3,padding:"1px 5px"}}>{c}</span>)}</div>}
             </div>
-
-            {/* Course */}
-            {showCourse&&<div style={{padding:"13px 14px"}}>
-              {course?<span style={{fontSize:10,color:course.color,fontWeight:700,background:course.color+"18",borderRadius:3,padding:"2px 6px"}}>{course.icon} {course.id.toUpperCase()}</span>:<span style={{color:"#2A2A2A"}}>—</span>}
-            </div>}
-
-            {/* Contact */}
+            {showCourse&&<div style={{padding:"13px 14px"}}>{course?<span style={{fontSize:10,color:course.color,fontWeight:700,background:course.color+"18",borderRadius:3,padding:"2px 6px"}}>{course.icon} {course.id.toUpperCase()}</span>:<span style={{color:"#2A2A2A"}}>—</span>}</div>}
             <div style={{padding:"13px 14px",minWidth:0}}>
-              {requester ? (
-                <div style={{display:"flex",alignItems:"center",gap:7}}>
-                  <div style={{width:24,height:24,borderRadius:5,background:`${orgColor}20`,border:`1px solid ${orgColor}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:orgColor,flexShrink:0}}>
-                    {initials(requester.name)}
-                  </div>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:12,color:"#C8B8A8",fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.name}</div>
-                    <div style={{fontSize:10,color:orgColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.orgName}</div>
-                  </div>
+              {requester?(<div style={{display:"flex",alignItems:"center",gap:7}}>
+                <div style={{width:24,height:24,borderRadius:5,background:`${orgColor}20`,border:`1px solid ${orgColor}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:orgColor,flexShrink:0}}>{initials(requester.name)}</div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12,color:"#C8B8A8",fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.name}</div>
+                  <div style={{fontSize:10,color:orgColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.orgName}</div>
                 </div>
-              ) : <span style={{color:"#2A2A2A",fontSize:12}}>—</span>}
+              </div>):<span style={{color:"#2A2A2A",fontSize:12}}>—</span>}
             </div>
-
-            {/* Priority */}
-            <div style={{padding:"13px 14px"}}>
-              <span style={{fontSize:10,fontWeight:700,color:railColor,background:railColor+"18",border:`1px solid ${railColor}40`,borderRadius:4,padding:"2px 8px",letterSpacing:"0.06em",textTransform:"uppercase"}}>{t.priority}</span>
-            </div>
-
-            {/* Status */}
-            <div style={{padding:"13px 14px"}}>
-              {badge(t.status,STATUS_COLOR[t.status])}
-            </div>
-
-            {/* Assigned */}
-            {showAssigned&&<div style={{padding:"13px 14px"}}>
-              {assigned ? (
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{width:22,height:22,borderRadius:"50%",background:"#2A2A2A",border:"1px solid #3A3A3A",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#8A7868",flexShrink:0}}>
-                    {initials(assigned.name)}
-                  </div>
-                  <span style={{fontSize:11,color:"#8A7868",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{assigned.name.split(" ")[0]}</span>
-                </div>
-              ) : <span style={{fontSize:11,color:"#2A2A2A"}}>Unassigned</span>}
-            </div>}
-
-            {/* SLA */}
+            <div style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,color:railColor,background:railColor+"18",border:`1px solid ${railColor}40`,borderRadius:4,padding:"2px 8px",textTransform:"uppercase"}}>{t.priority}</span></div>
+            <div style={{padding:"13px 14px"}}>{badge(t.status,STATUS_COLOR[t.status])}</div>
+            {showAssigned&&<div style={{padding:"13px 14px"}}>{assigned?(<div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:22,height:22,borderRadius:"50%",background:"#2A2A2A",border:"1px solid #3A3A3A",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#8A7868",flexShrink:0}}>{initials(assigned.name)}</div><span style={{fontSize:11,color:"#8A7868"}}>{assigned.name.split(" ")[0]}</span></div>):<span style={{fontSize:11,color:"#2A2A2A"}}>Unassigned</span>}</div>}
             {showSLA&&<div style={{padding:"13px 14px"}}><SLACompact ticket={t}/></div>}
-
-            {/* Age */}
-            <div style={{padding:"13px 14px",fontSize:11,color:"#4A3828",whiteSpace:"nowrap"}}>{timeAgo(t.created)}</div>
+            <div style={{padding:"13px 14px",fontSize:11,color:"#4A3828"}}>{timeAgo(t.created)}</div>
           </div>
         );
       })}
@@ -2858,7 +2922,7 @@ function KBEditor({article,session,canPublish,onSave,onCancel}) {
         <Field label="Title">
           <input value={form.title} onChange={e=>set("title",e.target.value)} style={inputStyle} placeholder="Article title" />
         </Field>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <div className="new-ticket-grid">
           <Field label="Course">
             <select value={form.courseId} onChange={e=>set("courseId",e.target.value)} style={inputStyle}>
               {COURSES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
@@ -3082,7 +3146,7 @@ function IRDetail({incident,session,users,tickets,onSave,onDelete,onBack}) {
         </div>
       </Card>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:20,alignItems:"start"}}>
+      <div className="ir-grid">
         {/* Left col */}
         <div>
           {/* Description */}
