@@ -969,49 +969,80 @@ function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onSt
   const mine=tickets.filter(t=>t.submittedBy===session.id||t.assignedTo===session.id)
     .sort((a,b)=>new Date(b.created)-new Date(a.created));
 
-  // ── Assigned ticket detail view (student opens a lab ticket) ──
+  // ── Assigned ticket detail — matches TicketDetail layout exactly ──
   if(selectedAssigned) {
     const at = assignedTickets.find(t=>t.id===selectedAssigned);
     if(at) {
-      const course=courseById(at.course_id);
+      const course = courseById(at.course_id);
       const scenario = SCENARIOS.find(s=>s.id===at.scenario_id);
       const requester = scenario ? PERSON_BY_ID[scenario.requesterId] : null;
       const orgColor = requester ? (ORG_COLOR[requester.org]||"#E8922E") : "#E8922E";
-      const statusOptions=["Open","In Progress","Resolved","Closed"];
+      const railColor = PRI_RAIL[at.priority] || "#6b7280";
+      const isResolved = ["Resolved","Closed"].includes(at.status);
+      const statusOptions = ["Open","In Progress","Resolved","Closed"];
+      const initials = name => name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();
+
       return (
-        <div style={{maxWidth:880}}>
-          <button onClick={()=>setSelectedAssigned(null)}
-            style={{background:"none",border:"none",color:"#6A5848",cursor:"pointer",fontSize:13,marginBottom:20,padding:0}}>
-            ← Back to My Tickets
-          </button>
-          <div style={{marginBottom:20}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-              {course&&<span style={{fontSize:11,color:course.color,fontWeight:700,background:course.color+"18",border:`1px solid ${course.color}33`,borderRadius:4,padding:"1px 8px"}}>{course.icon} {course.id.toUpperCase()}</span>}
-              {at.group_tag&&<span style={{fontSize:11,color:"#a78bfa",background:"#a78bfa18",borderRadius:4,padding:"1px 8px"}}>👥 {at.group_tag}</span>}
-            </div>
-            <div style={{fontFamily:"'Raleway',sans-serif",fontSize:24,fontWeight:700,color:"#F0EDE8"}}>{at.title.replace(/^\[W\d+\] /,"")}</div>
-            <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
-              {badge(at.status,STATUS_COLOR[at.status])}
-              {badge(at.priority,PRIORITY_COLOR[at.priority])}
+        <div style={{maxWidth:1040,fontFamily:"'Inter',sans-serif"}}>
+
+          {/* Top breadcrumb bar */}
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,paddingBottom:16,borderBottom:"1px solid #1E1E1E"}}>
+            <button onClick={()=>setSelectedAssigned(null)}
+              style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"1px solid #242424",color:"#8A7868",cursor:"pointer",fontSize:12,borderRadius:6,padding:"6px 12px"}}>
+              ← Back
+            </button>
+            <span style={{color:"#3A3A3A",fontSize:12}}>/</span>
+            <span style={{fontSize:12,fontFamily:"'JetBrains Mono',monospace",color:"#6A5848",background:"#1A1A1A",border:"1px solid #242424",borderRadius:4,padding:"3px 8px"}}>
+              {at.id?.slice(0,8)||"—"}
+            </span>
+            {course&&<span style={{fontSize:11,color:course.color,fontWeight:700,background:course.color+"15",border:`1px solid ${course.color}30`,borderRadius:4,padding:"3px 8px"}}>{course.icon} {course.id.toUpperCase()}</span>}
+            {at.group_tag&&<span style={{fontSize:11,color:"#a78bfa",background:"#a78bfa15",borderRadius:4,padding:"3px 8px"}}>👥 {at.group_tag}</span>}
+            <div style={{flex:1}}/>
+            <select value={at.status} onChange={e=>onStatusChange(at.id,e.target.value)}
+              style={{...inputStyle,width:"auto",padding:"6px 10px",fontSize:12,
+                background:STATUS_COLOR[at.status]+"18",border:`1px solid ${STATUS_COLOR[at.status]}55`,
+                color:STATUS_COLOR[at.status],fontWeight:700}}>
+              {statusOptions.map(s=><option key={s} style={{background:"#1A1A1A",color:"#EDE9E3"}}>{s}</option>)}
+            </select>
+          </div>
+
+          {/* Title block */}
+          <div style={{marginBottom:24,display:"flex",alignItems:"flex-start",gap:12}}>
+            <div style={{width:4,alignSelf:"stretch",background:isResolved?"#2A2A2A":railColor,borderRadius:2,flexShrink:0,minHeight:32}}/>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Raleway',sans-serif",fontSize:22,fontWeight:800,color:"#F0EDE8",lineHeight:1.2,marginBottom:10}}>
+                {at.title.replace(/^\[W\d+\] /,"")}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:11,fontWeight:700,color:railColor,background:railColor+"18",border:`1px solid ${railColor}40`,borderRadius:4,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{at.priority}</span>
+              </div>
             </div>
           </div>
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:20,alignItems:"start"}}>
-            {/* Email-style description */}
-            <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
-              {requester && (
-                <div style={{padding:"14px 20px",borderBottom:"1px solid #1E1E1E",background:"#111",display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:36,height:36,borderRadius:8,background:`${orgColor}20`,border:`1px solid ${orgColor}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:orgColor,flexShrink:0,fontFamily:"'Raleway',sans-serif"}}>
-                    {requester.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24,alignItems:"start"}}>
+            {/* Main column */}
+            <div>
+              {/* Email-style description */}
+              <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
+                {requester && (
+                  <div style={{padding:"14px 20px",borderBottom:"1px solid #1E1E1E",background:"#111",display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:36,height:36,borderRadius:8,background:`${orgColor}20`,border:`1px solid ${orgColor}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:orgColor,flexShrink:0,fontFamily:"'Raleway',sans-serif"}}>
+                      {initials(requester.name)}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:"#EDE9E3"}}>
+                        {requester.name} <span style={{fontWeight:400,color:"#4A3828",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>&#60;{requester.email}&#62;</span>
+                      </div>
+                      <div style={{fontSize:11,color:"#6A5848",marginTop:1}}>
+                        {requester.role} · <span style={{color:orgColor}}>{requester.orgName}</span>
+                        {at.created_at&&<><span style={{color:"#2A2A2A",margin:"0 6px"}}>·</span><span>{fmt(at.created_at)}</span></>}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:"#EDE9E3"}}>{requester.name} <span style={{fontWeight:400,color:"#4A3828",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>&#60;{requester.email}&#62;</span></div>
-                    <div style={{fontSize:11,color:"#6A5848",marginTop:1}}>{requester.role} · <span style={{color:orgColor}}>{requester.orgName}</span></div>
-                  </div>
+                )}
+                <div style={{padding:"20px 24px"}}>
+                  <p style={{color:"#C8B8A8",fontSize:14,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{at.description}</p>
                 </div>
-              )}
-              <div style={{padding:"20px 24px"}}>
-                <p style={{color:"#C8B8A8",fontSize:14,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{at.description}</p>
               </div>
             </div>
 
@@ -1025,17 +1056,25 @@ function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onSt
                       {statusOptions.map(s=><option key={s} value={s}>{s}</option>)}
                     </select>
                   </Field>
-                  <DetailRow label="Priority" val={badge(at.priority,PRIORITY_COLOR[at.priority])} />
+                  <DetailRow label="Priority" val={<span style={{fontSize:11,fontWeight:700,color:railColor}}>{at.priority}</span>} />
                   {course&&<DetailRow label="Course" val={<span style={{color:course.color,fontSize:12}}>{course.icon} {course.label}</span>} />}
-                  {at.lab_assignments?.week_label&&<DetailRow label="Assignment" val={at.lab_assignments.week_label} />}
+                  {at.lab_assignments?.week_label&&<DetailRow label="Assignment" val={<span style={{fontSize:11,color:"#8A7868"}}>{at.lab_assignments.week_label}</span>} />}
                 </div>
               </div>
+
               {requester&&(
                 <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
                   <div style={{padding:"10px 16px",borderBottom:"1px solid #1E1E1E",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",color:"#4A4038"}}>Contact</div>
                   <div style={{padding:"16px"}}><RequesterChip requesterId={scenario.requesterId} /></div>
                 </div>
               )}
+
+              <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,padding:"14px 16px"}}>
+                {at.created_at&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:11,color:"#4A3828"}}>Created</span>
+                  <span style={{fontSize:11,color:"#6A5848"}}>{fmt(at.created_at)}</span>
+                </div>}
+              </div>
             </div>
           </div>
         </div>
@@ -1050,32 +1089,58 @@ function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onSt
     <div>
       <PageTitle title="My Tickets" sub={`${total} ticket${total!==1?"s":""}`} />
 
-      {/* Assigned lab tickets */}
+      {/* Assigned tickets — same row style as TicketTable */}
       {hasAssigned && (
         <div style={{marginBottom:32}}>
           <SectionLabel>Active Assignments</SectionLabel>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {assignedTickets.map(t=>{
-              const course=courseById(t.course_id);
-              const isOpen=!["Resolved","Closed"].includes(t.status);
+          <div style={{background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
+            <style>{`.at-row:hover{background:#1E1A17 !important;}`}</style>
+            {assignedTickets.map((t,i)=>{
+              const course = courseById(t.course_id);
+              const scenario = SCENARIOS.find(s=>s.id===t.scenario_id);
+              const requester = scenario ? PERSON_BY_ID[scenario.requesterId] : null;
+              const orgColor = requester ? (ORG_COLOR[requester.org]||"#E8922E") : "#E8922E";
+              const railColor = PRI_RAIL[t.priority]||"#6b7280";
+              const isResolved = ["Resolved","Closed"].includes(t.status);
+              const initials = requester ? requester.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase() : "?";
               return (
-                <div key={t.id} onClick={()=>setSelectedAssigned(t.id)}
-                  style={{background:"#1A1A1A",border:`1px solid ${isOpen?"#E8922E44":"#242424"}`,
-                    borderLeft:`3px solid ${isOpen?"#E8922E":"#2A2A2A"}`,
-                    borderRadius:12,padding:"16px 20px",cursor:"pointer",
-                    display:"flex",alignItems:"center",gap:16}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#201C18"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#1A1A1A"}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:14,fontWeight:600,color:"#F0EDE8",marginBottom:6}}>{t.title.replace(/^\[W\d+\] /,"")}</div>
-                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                      {badge(t.status,STATUS_COLOR[t.status])}
-                      {badge(t.priority,PRIORITY_COLOR[t.priority])}
-                      {course&&<span style={{fontSize:11,color:course.color}}>{course.icon} {course.label}</span>}
-                      {t.group_tag&&<span style={{fontSize:11,color:"#a78bfa"}}>👥 {t.group_tag}</span>}
+                <div key={t.id} className="at-row" onClick={()=>setSelectedAssigned(t.id)}
+                  style={{display:"flex",alignItems:"center",gap:0,
+                    borderBottom:i<assignedTickets.length-1?"1px solid #1A1A1A":"none",
+                    cursor:"pointer",background:"transparent",transition:"background 0.1s"}}>
+                  {/* Priority rail */}
+                  <div style={{width:4,alignSelf:"stretch",background:isResolved?"#2A2A2A":railColor,opacity:isResolved?0.3:1,flexShrink:0}}/>
+                  <div style={{flex:1,display:"flex",alignItems:"center",gap:0,padding:"0 0 0 0",minWidth:0}}>
+                    {/* Subject */}
+                    <div style={{flex:1,padding:"14px 16px",minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:500,color:isResolved?"#6A5848":"#EDE9E3",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        {t.title.replace(/^\[W\d+\] /,"")}
+                      </div>
+                      {course&&<div style={{fontSize:10,color:course.color,fontWeight:600,marginTop:3}}>{course.icon} {course.id.toUpperCase()}</div>}
                     </div>
+                    {/* Contact */}
+                    <div style={{width:160,padding:"14px 16px",flexShrink:0}}>
+                      {requester ? (
+                        <div style={{display:"flex",alignItems:"center",gap:7}}>
+                          <div style={{width:24,height:24,borderRadius:5,background:`${orgColor}20`,border:`1px solid ${orgColor}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:orgColor,flexShrink:0}}>
+                            {initials}
+                          </div>
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:12,color:"#C8B8A8",fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.name}</div>
+                            <div style={{fontSize:10,color:orgColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.orgName}</div>
+                          </div>
+                        </div>
+                      ) : <span style={{color:"#2A2A2A",fontSize:12}}>—</span>}
+                    </div>
+                    {/* Priority */}
+                    <div style={{width:90,padding:"14px 16px",flexShrink:0}}>
+                      <span style={{fontSize:10,fontWeight:700,color:railColor,background:railColor+"18",border:`1px solid ${railColor}40`,borderRadius:4,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.priority}</span>
+                    </div>
+                    {/* Status */}
+                    <div style={{width:110,padding:"14px 16px",flexShrink:0}}>{badge(t.status,STATUS_COLOR[t.status])}</div>
+                    {/* Age */}
+                    <div style={{width:80,padding:"14px 16px",fontSize:11,color:"#4A3828",flexShrink:0}}>{t.created_at?timeAgo(t.created_at):""}</div>
                   </div>
-                  <div style={{color:"#E8922E",fontSize:12,flexShrink:0}}>Open →</div>
                 </div>
               );
             })}
