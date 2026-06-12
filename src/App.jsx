@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase.js";
 import { COURSES, courseById } from "./data/courses.js";
 import { CLIENTS } from "./data/clients.js";
+import { PERSON_BY_ID, ORG_COLOR } from "./data/people.js";
 import { SCENARIOS } from "./data/scenarios.js";
 import {
   SEED_USERS, SEED_TICKETS, SEED_KB, SEED_INCIDENTS,
@@ -1135,9 +1136,17 @@ function TicketDetail({ticket,session,users,onUpdate,onBack}) {
 
           {!ticket.labScenarioId&&(
             <Card style={{marginBottom:16}}>
+              {ticket.requesterId && (
+                <div style={{marginBottom:14}}>
+                  <SectionLabel>Requester</SectionLabel>
+                  <RequesterChip requesterId={ticket.requesterId} />
+                </div>
+              )}
               <SectionLabel>Description</SectionLabel>
-              <p style={{color:"#B8A898",fontSize:14,lineHeight:1.7,margin:0}}>{ticket.description}</p>
-              <div style={{marginTop:12,fontSize:12,color:"#6A5848"}}>Submitted by <strong style={{color:"#8A7868"}}>{nameOf(ticket.submittedBy)}</strong> · {fmt(ticket.created)}</div>
+              <p style={{color:"#B8A898",fontSize:14,lineHeight:1.7,margin:0,whiteSpace:"pre-wrap"}}>{ticket.description}</p>
+              {!ticket.requesterId && (
+                <div style={{marginTop:12,fontSize:12,color:"#6A5848"}}>Submitted by <strong style={{color:"#8A7868"}}>{nameOf(ticket.submittedBy)}</strong> · {fmt(ticket.created)}</div>
+              )}
             </Card>
           )}
 
@@ -1904,9 +1913,30 @@ function SLACompact({ticket}) {
   return (<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11}}><span style={{width:7,height:7,borderRadius:"50%",background:info.color,display:"inline-block"}}/><span style={{color:info.color,fontWeight:700}}>{info.breached?"BREACH":fmtDur(info.msLeft)}</span></span>);
 }
 
+function RequesterChip({requesterId, inline=false}) {
+  const p = PERSON_BY_ID[requesterId];
+  if (!p) return null;
+  const color = ORG_COLOR[p.org] || "#6A5848";
+  if (inline) return (
+    <span style={{fontSize:11,color,fontWeight:600}}>{p.name}</span>
+  );
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,background:"#0D0D0D",border:`1px solid ${color}33`,borderRadius:8,padding:"10px 14px"}}>
+      <div style={{width:32,height:32,borderRadius:"50%",background:`${color}22`,border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color,flexShrink:0}}>
+        {p.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+      </div>
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:"#EDE9E3"}}>{p.name}</div>
+        <div style={{fontSize:11,color:"#6A5848"}}>{p.role} · <span style={{color}}>{p.orgName}</span></div>
+        <div style={{fontSize:10,color:"#4A3828",fontFamily:"monospace",marginTop:1}}>{p.email}</div>
+      </div>
+    </div>
+  );
+}
+
 function TicketTable({tickets,users,session,onOpen,showAssigned=false,showSLA=false,showCourse=false}) {
   function nameOf(id){return users.find(u=>u.id===id)?.name?.split(" ")[0]||"—";}
-  const headers=["ID","Title",showCourse&&"Course","Priority","Status",showAssigned&&"Assigned",showSLA&&"SLA","Created"].filter(Boolean);
+  const headers=["ID","Title",showCourse&&"Course","From","Priority","Status",showAssigned&&"Assigned",showSLA&&"SLA","Created"].filter(Boolean);
   return (
     <div style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:12,overflow:"hidden"}}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
@@ -1916,14 +1946,24 @@ function TicketTable({tickets,users,session,onOpen,showAssigned=false,showSLA=fa
           {tickets.map(t=>{
             const course=courseById(t.courseId);
             const breached=slaInfo(t.created,t.priority,t.status)?.breached;
+            const requester = PERSON_BY_ID[t.requesterId];
             return (
               <tr key={t.id} onClick={()=>onOpen(t.id)}
                 style={{borderBottom:"1px solid #0D0D0D",cursor:"pointer",borderLeft:breached?"3px solid #ef4444":"3px solid transparent",transition:"background 0.1s"}}
                 onMouseEnter={e=>e.currentTarget.style.background="#2A2420"}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <td style={{padding:"11px 16px",color:"#6A5848",fontFamily:"monospace",fontSize:12}}>{t.id}</td>
-                <td style={{padding:"11px 16px",color:"#EDE9E3",maxWidth:220}}><div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>{t.week&&<div style={{fontSize:10,color:"#6A5848",marginTop:1}}>Week {t.week}</div>}</td>
+                <td style={{padding:"11px 16px",color:"#EDE9E3",maxWidth:200}}><div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>{t.week&&<div style={{fontSize:10,color:"#6A5848",marginTop:1}}>Week {t.week}</div>}</td>
                 {showCourse&&<td style={{padding:"11px 16px"}}>{course?<span style={{fontSize:11,color:course.color,fontWeight:700}}>{course.icon} {course.id.toUpperCase()}</span>:<span style={{color:"#4A3828"}}>-</span>}</td>}
+                <td style={{padding:"11px 16px",maxWidth:160}}>
+                  {requester
+                    ? <div>
+                        <div style={{fontSize:12,color:ORG_COLOR[requester.org]||"#8A7868",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.name}</div>
+                        <div style={{fontSize:10,color:"#4A3828",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{requester.orgName}</div>
+                      </div>
+                    : <span style={{color:"#4A3828"}}>—</span>
+                  }
+                </td>
                 <td style={{padding:"11px 16px"}}>{badge(t.priority,PRIORITY_COLOR[t.priority])}</td>
                 <td style={{padding:"11px 16px"}}>{badge(t.status,STATUS_COLOR[t.status])}</td>
                 {showAssigned&&<td style={{padding:"11px 16px",color:"#8A7868"}}>{t.assignedTo?nameOf(t.assignedTo):<span style={{color:"#4A3828"}}>-</span>}</td>}
