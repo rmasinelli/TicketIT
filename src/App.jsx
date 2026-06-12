@@ -423,7 +423,7 @@ function Login({ onSignIn }) {
     if (!code) { setErr("Enter your class code."); setLoading(false); return; }
     const email = makeEmail(alias.trim(), code);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) { setErr("Invalid alias or password."); setLoading(false); return; }
+    if (error) { setErr(`Failed (trying: ${email})`); setLoading(false); return; }
     saveCode(alias.trim(), code);
     const profile = await onSignIn(data.user.id);
     if (!profile) setErr("Account found but profile missing — contact your instructor.");
