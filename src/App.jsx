@@ -430,7 +430,7 @@ function Login({ onSignIn }) {
       .select("id, name")
       .ilike("code", classCode.trim())
       .single();
-    if (clsErr || !cls) { setErr("Class code not found. Check with your instructor."); setLoading(false); return; }
+    if (clsErr || !cls) { setErr("Class code not found." + (clsErr ? " ("+clsErr.message+")" : "")); setLoading(false); return; }
 
     // Check alias not already taken in this class
     const { data: existing } = await supabase
