@@ -102,8 +102,9 @@ export default function App() {
   const [view,setView]             = useState("dashboard");
   const [selected,setSelected]     = useState(null);
   const [toast,setToast]           = useState(null);
-  const [classStudents,setClassStudents] = useState([]);
+  const [classStudents,setClassStudents]   = useState([]);
   const [assignedTickets,setAssignedTickets] = useState([]);
+  const [customScenarios,setCustomScenarios] = useState([]);
 
   // ── Load profile from Supabase after auth ──────────────────────
   const loadProfile = useCallback(async (userId) => {
@@ -185,6 +186,8 @@ export default function App() {
       supabase.from("profiles").select("*")
         .eq("class_id", session.class_id).eq("role","student").order("alias")
         .then(({data})=>{ if(data) setClassStudents(data); });
+      supabase.from("ticket_templates").select("*").order("course_id").order("week")
+        .then(({data})=>{ if(data) setCustomScenarios(data); });
     } else {
       supabase.from("assigned_tickets")
         .select("*, lab_assignments(week_label, assigned_at)")
@@ -192,6 +195,36 @@ export default function App() {
         .then(({data})=>{ if(data) setAssignedTickets(data); });
     }
   },[session]);
+
+  async function saveCustomScenario(scenario) {
+    if (scenario.id) {
+      const {error} = await supabase.from("ticket_templates").update(scenario).eq("id",scenario.id);
+      if (error) { showToast("Save failed: "+error.message,"error"); return false; }
+      setCustomScenarios(prev=>prev.map(s=>s.id===scenario.id?scenario:s));
+    } else {
+      const id = "cst-"+Date.now();
+      const {data,error} = await supabase.from("ticket_templates").insert({...scenario,id}).select().single();
+      if (error) { showToast("Save failed: "+error.message,"error"); return false; }
+      setCustomScenarios(prev=>[...prev,data]);
+    }
+    showToast("Scenario saved.");
+    return true;
+  }
+
+  async function deleteCustomScenario(id) {
+    const {error} = await supabase.from("ticket_templates").delete().eq("id",id);
+    if (error) { showToast("Delete failed: "+error.message,"error"); return; }
+    setCustomScenarios(prev=>prev.filter(s=>s.id!==id));
+    showToast("Scenario deleted.");
+  }
+
+  async function importScenarios(rows) {
+    const timestamped = rows.map((r,i)=>({...r, id:"cst-"+Date.now()+"-"+i}));
+    const {data,error} = await supabase.from("ticket_templates").insert(timestamped).select();
+    if (error) { showToast("Import failed: "+error.message,"error"); return; }
+    setCustomScenarios(prev=>[...prev,...data]);
+    showToast(`Imported ${data.length} scenario(s).`);
+  }
 
   async function pushLabAssignment(courseId, week, scenarioId, mode, studentIds) {
     const scenario = SCENARIOS.find(s=>s.id===scenarioId);
@@ -306,6 +339,7 @@ export default function App() {
       {view==="labs" && session.role==="admin" && (
         <LabManager
           session={session} classStudents={classStudents}
+          customScenarios={customScenarios}
           onActivate={pushLabAssignment}
         />
       )}
@@ -313,6 +347,14 @@ export default function App() {
         <MyLabs session={session} assignedTickets={assignedTickets}
           onStatusChange={updateAssignedTicketStatus}
           onSaveNote={saveLabNote} />
+      )}
+      {view==="scenarios" && session.role==="admin" && (
+        <ScenarioLibrary
+          customScenarios={customScenarios}
+          onSave={saveCustomScenario}
+          onDelete={deleteCustomScenario}
+          onImport={importScenarios}
+        />
       )}
       {view==="admin" && session.role==="admin" && (
         <AdminPanel users={users} tickets={tickets}
@@ -502,8 +544,9 @@ function Shell({session,onLogout,view,setView,unread,children}) {
     {id:"queue",      label:"Ticket Queue", roles:["tech","admin"],           icon:"▤"},
     {id:"kb",         label:"Knowledge Base",roles:["student","tech","admin"],icon:"📖"},
     {id:"ir",         label:"Incidents",    roles:["student","tech","admin"], icon:"🚨"},
-    {id:"my-labs",    label:"My Labs",      roles:["student"],                icon:"🧪"},
+    {id:"my-labs",    label:"My Labs",       roles:["student"],               icon:"🧪"},
     {id:"labs",       label:"Lab Manager",  roles:["admin"],                  icon:"🔬"},
+    {id:"scenarios",  label:"Scenarios",    roles:["admin"],                  icon:"📋"},
     {id:"inbox",      label:"Inbox",        roles:["student","tech","admin"], icon:"✉"},
     {id:"admin",      label:"Admin Panel",  roles:["admin"],                  icon:"⚙"},
   ].filter(n=>n.roles.includes(session.role));
@@ -972,27 +1015,39 @@ function TicketDetail({ticket,session,users,onUpdate,onBack}) {
 // ═══════════════════════════════════════════════════════════════
 // LAB MANAGER (Instructor)
 // ═══════════════════════════════════════════════════════════════
-function LabManager({session,classStudents,onActivate}) {
+function LabManager({session,classStudents,customScenarios,onActivate}) {
   const [courseTab,setCourseTab]=useState("net");
   const [expandWeek,setExpandWeek]=useState(null);
   const [assignMode,setAssignMode]=useState("broadcast");
   const [selectedStudents,setSelectedStudents]=useState([]);
   const [pushing,setPushing]=useState(false);
+  const [scenarioOverride,setScenarioOverride]=useState({}); // week -> scenarioId
 
   const course=courseById(courseTab);
   const courseStudents=classStudents.filter(u=>
     courseTab==="cyber"?u.cohort==="cyber":u.cohort!=="cyber");
-  const scenarios=SEED_SCENARIOS.filter(s=>s.courseId===courseTab);
+
+  // Merge built-in + custom for this course
+  const builtIn=SEED_SCENARIOS.filter(s=>s.courseId===courseTab);
+  const custom=(customScenarios||[]).filter(s=>s.course_id===courseTab);
+  const allScenarios=[...builtIn,...custom.map(s=>({...s,courseId:s.course_id,id:s.id}))];
+  const scenarios=builtIn; // default week slots still from built-in
 
   function toggleStudent(uid) {
     setSelectedStudents(s=>s.includes(uid)?s.filter(x=>x!==uid):[...s,uid]);
   }
 
-  async function activate(scenario) {
+  async function activate(week) {
+    const defaultScenario=scenarios.find(s=>s.week===week);
+    const overrideId=scenarioOverride[week];
+    const scenario=overrideId
+      ? allScenarios.find(s=>s.id===overrideId)||defaultScenario
+      : defaultScenario;
+    if(!scenario) return;
     const assignees=assignMode==="broadcast"?courseStudents.map(u=>u.id):selectedStudents;
     if(assignees.length===0) return;
     setPushing(true);
-    await onActivate(courseTab,scenario.week,scenario.id,assignMode,assignees);
+    await onActivate(courseTab,week,scenario.id,assignMode,assignees);
     setPushing(false);
     setExpandWeek(null); setSelectedStudents([]);
   }
@@ -1041,9 +1096,25 @@ function LabManager({session,classStudents,onActivate}) {
                 <div style={{color:"#6A5848",fontSize:12,flexShrink:0}}>{expanded?"▲":"▼"}</div>
               </div>
 
-              {expanded&&scenario&&(
+              {expanded&&(
                 <div style={{borderTop:"1px solid #242424",padding:"20px 24px",background:"#0D0D0D"}}>
-                  <div style={{color:"#B8A898",fontSize:13,lineHeight:1.7,marginBottom:20,whiteSpace:"pre-wrap"}}>{scenario.description}</div>
+                  {/* Scenario picker */}
+                  <Field label="Scenario">
+                    <select value={scenarioOverride[week]||scenario?.id||""}
+                      onChange={e=>setScenarioOverride(p=>({...p,[week]:e.target.value}))}
+                      style={inputStyle}>
+                      {allScenarios.map(s=>(
+                        <option key={s.id} value={s.id}>
+                          {s.week?`W${s.week} · `:""}{s.title}{s.courseId!==courseTab?" (other course)":""}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {/* Description preview */}
+                  {(()=>{
+                    const sel=scenarioOverride[week]?allScenarios.find(s=>s.id===scenarioOverride[week]):scenario;
+                    return sel ? <div style={{color:"#8A7868",fontSize:12,lineHeight:1.7,marginBottom:20,whiteSpace:"pre-wrap",background:"#1A1A1A",borderRadius:8,padding:"12px 16px"}}>{sel.description}</div> : null;
+                  })()}
                   <Field label="Assignment Mode">
                     <select value={assignMode} onChange={e=>setAssignMode(e.target.value)} style={inputStyle}>
                       <option value="broadcast">Broadcast — all enrolled students</option>
@@ -1068,7 +1139,7 @@ function LabManager({session,classStudents,onActivate}) {
                       }
                     </Field>
                   )}
-                  <button onClick={()=>activate(scenario)}
+                  <button onClick={()=>activate(week)}
                     style={{...btnPrimary,background:course.color,
                       opacity:(pushing||(!assignMode==="broadcast"&&selectedStudents.length===0))?0.5:1}}
                     disabled={pushing||(assignMode!=="broadcast"&&selectedStudents.length===0)}>
@@ -1082,6 +1153,194 @@ function LabManager({session,classStudents,onActivate}) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCENARIO LIBRARY
+// ═══════════════════════════════════════════════════════════════
+const BLANK_SCENARIO = {title:"",course_id:"net",week:1,priority:"Medium",mode:"broadcast",categories:[],description:""};
+
+function ScenarioLibrary({customScenarios,onSave,onDelete,onImport}) {
+  const [editing,setEditing]   = useState(null); // null | "new" | scenario object
+  const [filter,setFilter]     = useState("all");
+  const [importing,setImporting] = useState(false);
+  const [importErr,setImportErr] = useState("");
+  const [saving,setSaving]     = useState(false);
+  const [form,setForm]         = useState(BLANK_SCENARIO);
+
+  const builtIn = SCENARIOS.map(s=>({...s,course_id:s.courseId,_builtin:true}));
+  const all = [...builtIn,...customScenarios];
+  const filtered = filter==="all" ? all : filter==="custom" ? customScenarios : all.filter(s=>s.course_id===filter||s.courseId===filter);
+
+  function startNew()  { setForm(BLANK_SCENARIO); setEditing("new"); }
+  function startEdit(s){ setForm({...s}); setEditing(s); }
+  function cancel()    { setEditing(null); setImporting(false); setImportErr(""); }
+
+  async function handleSave() {
+    if (!form.title.trim() || !form.description.trim()) return;
+    setSaving(true);
+    const ok = await onSave(editing==="new" ? form : {...form, id: editing.id});
+    setSaving(false);
+    if (ok) setEditing(null);
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        let rows;
+        if (file.name.endsWith(".json")) {
+          rows = JSON.parse(ev.target.result);
+          if (!Array.isArray(rows)) throw new Error("JSON must be an array of scenarios.");
+        } else {
+          // CSV: first row = headers
+          const lines = ev.target.result.trim().split("\n");
+          const headers = lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
+          rows = lines.slice(1).map(line=>{
+            const vals = line.split(",").map(v=>v.trim().replace(/^"|"$/g,""));
+            return Object.fromEntries(headers.map((h,i)=>[h,vals[i]||""]));
+          });
+        }
+        // Validate required fields
+        const required = ["title","course_id","week","priority","mode","description"];
+        const missing = rows.findIndex(r=>required.some(k=>!r[k]));
+        if (missing>=0) throw new Error(`Row ${missing+1} is missing required fields.`);
+        rows = rows.map(r=>({...r, week:parseInt(r.week)||1, categories: r.categories ? (Array.isArray(r.categories)?r.categories:r.categories.split(";").map(c=>c.trim())) : []}));
+        setImportErr("");
+        onImport(rows);
+        setImporting(false);
+      } catch(err) { setImportErr(err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  const courseColor = {net:"#38bdf8",hw:"#fb923c",cyber:"#a78bfa"};
+  const courseLabel = {net:"Networking",hw:"Hardware",cyber:"Cybersecurity"};
+
+  if (editing) return (
+    <div style={{maxWidth:720}}>
+      <button onClick={cancel} style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",marginBottom:20}}>← Back</button>
+      <PageTitle title={editing==="new"?"New Scenario":"Edit Scenario"} sub="Custom scenarios are saved to Supabase and available in Lab Manager." />
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <Field label="Title" style={{gridColumn:"1/-1"}}>
+            <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} style={inputStyle} placeholder="e.g. Configure VLANs on Cisco Switch" />
+          </Field>
+          <Field label="Course">
+            <select value={form.course_id} onChange={e=>setForm(f=>({...f,course_id:e.target.value}))} style={inputStyle}>
+              <option value="net">Networking Fundamentals</option>
+              <option value="hw">Hardware Essentials</option>
+              <option value="cyber">Cybersecurity Fundamentals</option>
+            </select>
+          </Field>
+          <Field label="Week">
+            <select value={form.week} onChange={e=>setForm(f=>({...f,week:parseInt(e.target.value)}))} style={inputStyle}>
+              {Array.from({length:10},(_,i)=>i+1).map(w=><option key={w} value={w}>Week {w}</option>)}
+            </select>
+          </Field>
+          <Field label="Priority">
+            <select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={inputStyle}>
+              {PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+          <Field label="Mode">
+            <select value={form.mode} onChange={e=>setForm(f=>({...f,mode:e.target.value}))} style={inputStyle}>
+              <option value="broadcast">Broadcast — whole class</option>
+              <option value="individual">Individual</option>
+              <option value="pairs">Pairs</option>
+              <option value="teams">Teams</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Description / Lab Instructions">
+          <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}
+            style={{...inputStyle,minHeight:200,resize:"vertical",lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace",fontSize:12}}
+            placeholder={"Write the lab instructions here.\n\nTip: End with a 📓 Lab Book prompt so students know what to document."} />
+        </Field>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={handleSave} disabled={saving||!form.title.trim()||!form.description.trim()} style={{...btnPrimary,flex:1,opacity:saving?0.6:1}}>
+            {saving?"Saving…":"Save Scenario"}
+          </button>
+          <button onClick={cancel} style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,padding:"10px 20px",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </Card>
+    </div>
+  );
+
+  return (
+    <div style={{maxWidth:900}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:24}}>
+        <PageTitle title="Scenario Library" sub={`${builtIn.length} built-in · ${customScenarios.length} custom`} />
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          <button onClick={()=>setImporting(true)} style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:"pointer"}}>
+            Import JSON / CSV
+          </button>
+          <button onClick={startNew} style={{...btnPrimary,width:"auto",padding:"8px 18px"}}>+ New Scenario</button>
+        </div>
+      </div>
+
+      {importing && (
+        <Card style={{marginBottom:20}}>
+          <SectionLabel>Import Scenarios</SectionLabel>
+          <p style={{fontSize:12,color:"#8A7868",marginBottom:12,lineHeight:1.6}}>
+            Upload a <strong style={{color:"#B8A898"}}>JSON</strong> file (array of objects) or <strong style={{color:"#B8A898"}}>CSV</strong> file.<br/>
+            Required columns: <code style={{color:"#E8922E"}}>title, course_id, week, priority, mode, description</code><br/>
+            Optional: <code style={{color:"#6A5848"}}>categories</code> (semicolon-separated in CSV)
+          </p>
+          <a href="data:text/plain,title,course_id,week,priority,mode,description,categories" download="scenario-template.csv"
+            style={{fontSize:11,color:"#E8922E",display:"block",marginBottom:12}}>
+            Download CSV template
+          </a>
+          {importErr && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{importErr}</div>}
+          <input type="file" accept=".json,.csv" onChange={handleImportFile}
+            style={{color:"#B8A898",fontSize:13}} />
+          <button onClick={cancel} style={{display:"block",marginTop:12,background:"none",border:"none",color:"#6A5848",fontSize:12,cursor:"pointer"}}>Cancel</button>
+        </Card>
+      )}
+
+      {/* Filter tabs */}
+      <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+        {["all","custom","net","hw","cyber"].map(f=>(
+          <button key={f} onClick={()=>setFilter(f)}
+            style={{padding:"6px 14px",borderRadius:6,fontSize:12,cursor:"pointer",
+              background:filter===f?"#E8922E22":"#1A1A1A",
+              color:filter===f?"#E8922E":"#8A7868",
+              border:`1px solid ${filter===f?"#E8922E55":"#242424"}`}}>
+            {f==="all"?"All":f==="custom"?"Custom Only":courseLabel[f]}
+          </button>
+        ))}
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {filtered.map(s=>(
+          <div key={s.id} style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:10,padding:"14px 18px",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:6,height:36,borderRadius:3,background:courseColor[s.course_id||s.courseId]||"#6A5848",flexShrink:0}} />
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#F0EDE8",marginBottom:4}}>{s.title}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:courseColor[s.course_id||s.courseId]}}>{courseLabel[s.course_id||s.courseId]}</span>
+                <span style={{fontSize:11,color:"#6A5848"}}>Week {s.week}</span>
+                {badge(s.priority,PRIORITY_COLOR[s.priority])}
+                <span style={{fontSize:11,color:"#6A5848"}}>{s.mode}</span>
+                {s._builtin && <span style={{fontSize:10,color:"#4A3828",border:"1px solid #4A3828",borderRadius:3,padding:"1px 5px"}}>built-in</span>}
+              </div>
+            </div>
+            {!s._builtin && (
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>startEdit(s)} style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer"}}>Edit</button>
+                <button onClick={()=>{if(window.confirm("Delete this scenario?"))onDelete(s.id);}}
+                  style={{background:"none",border:"1px solid #7f1d1d44",color:"#f87171",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer"}}>Delete</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {filtered.length===0 && <EmptyState msg="No scenarios match this filter." />}
       </div>
     </div>
   );
