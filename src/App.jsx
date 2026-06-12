@@ -966,8 +966,37 @@ function SubmitTicket({session,courses,onSubmit}) {
 // ═══════════════════════════════════════════════════════════════
 function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onStatusChange}) {
   const [selectedAssigned,setSelectedAssigned]=useState(null);
+  const [atNotes,setAtNotes]=useState([]);
+  const [noteText,setNoteText]=useState("");
+  const [postingNote,setPostingNote]=useState(false);
   const mine=tickets.filter(t=>t.submittedBy===session.id||t.assignedTo===session.id)
     .sort((a,b)=>new Date(b.created)-new Date(a.created));
+
+  // Load notes from lab_notes when an assigned ticket is opened
+  useEffect(()=>{
+    if(!selectedAssigned){ setAtNotes([]); setNoteText(""); return; }
+    supabase.from("lab_notes")
+      .select("content")
+      .eq("assigned_ticket_id",selectedAssigned)
+      .eq("student_id",session.id)
+      .maybeSingle()
+      .then(({data})=>{
+        const raw = data?.content;
+        if(raw?.notes) setAtNotes(raw.notes);
+        else setAtNotes([]);
+      });
+  },[selectedAssigned]);
+
+  async function postNote(){
+    if(!noteText.trim()||postingNote) return;
+    setPostingNote(true);
+    const newNote={author:session.id,authorName:session.alias||session.email,text:noteText.trim(),ts:new Date().toISOString()};
+    const next=[...atNotes,newNote];
+    await onSaveNote(selectedAssigned,{notes:next});
+    setAtNotes(next);
+    setNoteText("");
+    setPostingNote(false);
+  }
 
   // ── Assigned ticket detail — matches TicketDetail layout exactly ──
   if(selectedAssigned) {
@@ -1042,6 +1071,48 @@ function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onSt
                 )}
                 <div style={{padding:"20px 24px"}}>
                   <p style={{color:"#C8B8A8",fontSize:14,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{at.description}</p>
+                </div>
+              </div>
+
+              {/* Activity thread */}
+              <div style={{marginTop:16,background:"#141414",border:"1px solid #1E1E1E",borderRadius:10,overflow:"hidden"}}>
+                <div style={{padding:"10px 20px",borderBottom:"1px solid #1E1E1E",display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",color:"#4A4038",fontWeight:600}}>Activity · {atNotes.length} note{atNotes.length!==1?"s":""}</span>
+                </div>
+                {atNotes.length===0&&(
+                  <div style={{padding:"24px",textAlign:"center",color:"#3A3A3A",fontSize:13}}>No activity yet — add the first note below.</div>
+                )}
+                {atNotes.map((n,i)=>{
+                  const ini=initials(n.authorName||"?");
+                  return(
+                    <div key={i} style={{padding:"16px 20px",borderBottom:i<atNotes.length-1?"1px solid #1A1A1A":"none",display:"flex",gap:12,alignItems:"flex-start"}}>
+                      <div style={{width:30,height:30,borderRadius:"50%",background:"#E8922E22",border:"1px solid #E8922E44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#E8922E",flexShrink:0}}>{ini}</div>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                          <span style={{fontSize:12,fontWeight:600,color:"#B8A898"}}>{n.authorName||"You"}</span>
+                          <span style={{fontSize:11,color:"#3A3A3A"}}>{timeAgo(n.ts)}</span>
+                        </div>
+                        <div style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#C8B8A8",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{n.text}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Reply box */}
+                <div style={{padding:"16px 20px",borderTop:atNotes.length?"1px solid #1E1E1E":"none",display:"flex",gap:12,alignItems:"flex-start"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:"#E8922E22",border:"1px solid #E8922E44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#E8922E",flexShrink:0}}>
+                    {initials(session.alias||session.email||"?")}
+                  </div>
+                  <div style={{flex:1}}>
+                    <textarea value={noteText} onChange={e=>setNoteText(e.target.value)}
+                      placeholder="Add a note or update…"
+                      style={{...inputStyle,minHeight:80,resize:"vertical",lineHeight:1.6,fontSize:13,width:"100%",boxSizing:"border-box"}} />
+                    <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+                      <button onClick={postNote} disabled={!noteText.trim()||postingNote}
+                        style={{...btnPrimary,width:"auto",padding:"8px 20px",fontSize:13,opacity:(!noteText.trim()||postingNote)?0.4:1}}>
+                        {postingNote?"Posting…":"Post Note"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
