@@ -335,8 +335,10 @@ export default function App() {
 
       {view==="dashboard" && (
         <Dashboard session={session} tickets={tickets} users={users} activeLabs={activeLabs}
+          assignedTickets={assignedTickets}
           getMyLabTicket={getMyLabTicket}
-          onOpen={id=>{setSelected(id);setView("ticket");}} />
+          onOpen={id=>{setSelected(id);setView("ticket");}}
+          onOpenAssigned={id=>{setView("my-tickets");}} />
       )}
       {view==="submit" && (
         <SubmitTicket session={session} courses={COURSES}
@@ -784,29 +786,26 @@ function Shell({session,onLogout,view,setView,unread,children}) {
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
-function Dashboard({session,tickets,users,activeLabs,getMyLabTicket,onOpen}) {
+function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTicket,onOpen,onOpenAssigned}) {
   const myTickets = session.role==="student"
     ? tickets.filter(t=>t.submittedBy===session.id)
     : tickets;
 
-  const stats = {
-    open:      myTickets.filter(t=>t.status==="Open").length,
-    inProgress:myTickets.filter(t=>t.status==="In Progress").length,
-    resolved:  myTickets.filter(t=>["Resolved","Closed"].includes(t.status)).length,
-    breached:  myTickets.filter(t=>t.priority&&slaInfo(t.created,t.priority,t.status)?.breached).length,
-  };
-
-  // Active lab tickets for this student
-  const myActiveLabs = session.role==="student"
-    ? Object.entries(activeLabs).map(([key,lab])=>{
-        const lastDash = key.lastIndexOf("-");
-        const cid = key.slice(0, lastDash);
-        const week = parseInt(key.slice(lastDash + 1));
-        const ticketId=lab.assignees?.[session.id];
-        const ticket=ticketId?tickets.find(t=>t.id===ticketId):null;
-        return ticket?{courseId:cid,week,ticket}:null;
-      }).filter(Boolean)
-    : [];
+  // For students, include assigned tickets in stats
+  const at = assignedTickets || [];
+  const stats = session.role==="student"
+    ? {
+        open:       myTickets.filter(t=>t.status==="Open").length       + at.filter(t=>t.status==="Open").length,
+        inProgress: myTickets.filter(t=>t.status==="In Progress").length + at.filter(t=>t.status==="In Progress").length,
+        resolved:   myTickets.filter(t=>["Resolved","Closed"].includes(t.status)).length + at.filter(t=>["Resolved","Closed"].includes(t.status)).length,
+        breached:   myTickets.filter(t=>t.priority&&slaInfo(t.created,t.priority,t.status)?.breached).length,
+      }
+    : {
+        open:      myTickets.filter(t=>t.status==="Open").length,
+        inProgress:myTickets.filter(t=>t.status==="In Progress").length,
+        resolved:  myTickets.filter(t=>["Resolved","Closed"].includes(t.status)).length,
+        breached:  myTickets.filter(t=>t.priority&&slaInfo(t.created,t.priority,t.status)?.breached).length,
+      };
 
   const recent=[...myTickets].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,5);
 
@@ -814,26 +813,30 @@ function Dashboard({session,tickets,users,activeLabs,getMyLabTicket,onOpen}) {
     <div>
       <PageTitle title="Dashboard" sub={`Welcome back, ${session.name.split(" ")[0]}`} />
 
-      {/* Active lab callouts */}
-      {myActiveLabs.length>0&&(
+      {/* Active assignment callouts (from Supabase assigned_tickets) */}
+      {at.length>0&&(
         <div style={{marginBottom:28}}>
-          <SectionLabel>📋 Active Lab Assignments</SectionLabel>
+          <SectionLabel>Active Assignments</SectionLabel>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {myActiveLabs.map(({courseId,week,ticket})=>{
-              const course=courseById(courseId);
+            {at.map(t=>{
+              const course=courseById(t.course_id);
+              const isOpen=!["Resolved","Closed"].includes(t.status);
               return (
-                <div key={ticket.id} onClick={()=>onOpen(ticket.id)}
-                  style={{background:"#0D0D0D",border:`1px solid ${course.color}44`,borderLeft:`3px solid ${course.color}`,borderRadius:10,padding:"14px 20px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}
+                <div key={t.id} onClick={onOpenAssigned}
+                  style={{background:"#0D0D0D",border:`1px solid ${course?.color||"#E8922E"}44`,
+                    borderLeft:`3px solid ${course?.color||"#E8922E"}`,
+                    borderRadius:10,padding:"14px 20px",cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}
                   onMouseEnter={e=>e.currentTarget.style.background="#181410"}
                   onMouseLeave={e=>e.currentTarget.style.background="#0D0D0D"}>
                   <div>
-                    <div style={{fontSize:11,color:course.color,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:3}}>
-                      {course.icon} {course.label} — Week {week}
-                    </div>
-                    <div style={{color:"#EDE9E3",fontSize:14,fontWeight:600}}>{ticket.title.replace(/^\[W\d+\] /,"")}</div>
-                    <div style={{marginTop:4}}>{badge(ticket.status,STATUS_COLOR[ticket.status])}</div>
+                    {course&&<div style={{fontSize:11,color:course.color,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:3}}>
+                      {course.icon} {course.label}
+                    </div>}
+                    <div style={{color:"#EDE9E3",fontSize:14,fontWeight:600}}>{t.title.replace(/^\[W\d+\] /,"")}</div>
+                    <div style={{marginTop:4}}>{badge(t.status,STATUS_COLOR[t.status])}</div>
                   </div>
-                  <div style={{fontSize:12,color:"#E8922E",whiteSpace:"nowrap"}}>Open → </div>
+                  <div style={{fontSize:12,color:"#E8922E",whiteSpace:"nowrap"}}>View in My Tickets →</div>
                 </div>
               );
             })}
