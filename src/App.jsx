@@ -108,6 +108,7 @@ export default function App() {
   const [assignedTickets,setAssignedTickets] = useState([]);
   const [customScenarios,setCustomScenarios] = useState([]);
   const [showOnboarding,setShowOnboarding]   = useState(false);
+  const [deepAssigned,setDeepAssigned]       = useState(null); // assigned ticket id to auto-open in MyTickets
 
   // ── Load profile from Supabase after auth ──────────────────────
   const loadProfile = useCallback(async (userId) => {
@@ -338,7 +339,7 @@ export default function App() {
           assignedTickets={assignedTickets}
           getMyLabTicket={getMyLabTicket}
           onOpen={id=>{setSelected(id);setView("ticket");}}
-          onOpenAssigned={id=>{setView("my-tickets");}} />
+          onOpenAssigned={id=>{setDeepAssigned(id);setView("my-tickets");}} />
       )}
       {view==="submit" && (
         <SubmitTicket session={session} courses={COURSES}
@@ -356,6 +357,8 @@ export default function App() {
       {view==="my-tickets" && (
         <MyTickets session={session} tickets={tickets} users={users}
           assignedTickets={assignedTickets}
+          initialAssigned={deepAssigned}
+          onConsumeInitial={()=>setDeepAssigned(null)}
           onSaveNote={saveLabNote}
           onStatusChange={updateAssignedTicketStatus}
           onOpen={id=>{setSelected(id);setView("ticket");}} />
@@ -807,7 +810,14 @@ function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTic
         breached:  myTickets.filter(t=>t.priority&&slaInfo(t.created,t.priority,t.status)?.breached).length,
       };
 
-  const recent=[...myTickets].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,5);
+  // For students, merge assigned tickets into recent (shape them to match localStorage tickets)
+  const assignedAsTickets = at.map(t=>({
+    id:t.id, title:t.title.replace(/^\[W\d+\] /,""), status:t.status,
+    priority:t.priority, courseId:t.course_id, created:t.created_at||t.created,
+    submittedBy:session.id, assignedTo:null, notes:[], _isAssigned:true,
+  }));
+  const allMine = session.role==="student" ? [...myTickets,...assignedAsTickets] : myTickets;
+  const recent=[...allMine].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,5);
 
   return (
     <div>
@@ -822,7 +832,7 @@ function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTic
               const course=courseById(t.course_id);
               const isOpen=!["Resolved","Closed"].includes(t.status);
               return (
-                <div key={t.id} onClick={onOpenAssigned}
+                <div key={t.id} onClick={()=>onOpenAssigned(t.id)}
                   style={{background:"#0D0D0D",border:`1px solid ${course?.color||"#E8922E"}44`,
                     borderLeft:`3px solid ${course?.color||"#E8922E"}`,
                     borderRadius:10,padding:"14px 20px",cursor:"pointer",
@@ -881,7 +891,9 @@ function Dashboard({session,tickets,users,activeLabs,assignedTickets,getMyLabTic
       )}
 
       <SectionLabel>Recent Tickets</SectionLabel>
-      <TicketTable tickets={recent} users={users} session={session} onOpen={onOpen} showSLA showCourse />
+      <TicketTable tickets={recent} users={users} session={session}
+        onOpen={id=>{ const t=recent.find(r=>r.id===id); t?._isAssigned ? onOpenAssigned(id) : onOpen(id); }}
+        showSLA showCourse />
     </div>
   );
 }
@@ -964,13 +976,18 @@ function SubmitTicket({session,courses,onSubmit}) {
 // ═══════════════════════════════════════════════════════════════
 // MY TICKETS
 // ═══════════════════════════════════════════════════════════════
-function MyTickets({session,tickets,users,assignedTickets,onOpen,onSaveNote,onStatusChange}) {
-  const [selectedAssigned,setSelectedAssigned]=useState(null);
+function MyTickets({session,tickets,users,assignedTickets,initialAssigned,onConsumeInitial,onOpen,onSaveNote,onStatusChange}) {
+  const [selectedAssigned,setSelectedAssigned]=useState(initialAssigned||null);
   const [atNotes,setAtNotes]=useState([]);
   const [noteText,setNoteText]=useState("");
   const [postingNote,setPostingNote]=useState(false);
   const mine=tickets.filter(t=>t.submittedBy===session.id||t.assignedTo===session.id)
     .sort((a,b)=>new Date(b.created)-new Date(a.created));
+
+  // Consume deep-link from Dashboard
+  useEffect(()=>{
+    if(initialAssigned){ setSelectedAssigned(initialAssigned); onConsumeInitial?.(); }
+  },[initialAssigned]);
 
   // Load notes from lab_notes when an assigned ticket is opened
   useEffect(()=>{
