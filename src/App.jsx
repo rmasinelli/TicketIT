@@ -365,10 +365,12 @@ function Login({ onSignIn }) {
   async function handleSignIn() {
     setErr(""); setLoading(true);
     if (!alias.trim() || !pass) { setErr("Alias and password required."); setLoading(false); return; }
-    if (!storedCode) { setErr("No class code found — use Join Class on a new device."); setLoading(false); return; }
-    const email = makeEmail(alias.trim(), storedCode);
+    const code = classCode.trim() || storedCode;
+    if (!code) { setErr("Enter your class code."); setLoading(false); return; }
+    const email = makeEmail(alias.trim(), code);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) { setErr("Invalid alias or password."); setLoading(false); return; }
+    localStorage.setItem("cinder:classCode", code.toUpperCase());
     const profile = await onSignIn(data.user.id);
     if (!profile) setErr("Account found but profile missing — contact your instructor.");
     setLoading(false);
@@ -439,7 +441,7 @@ function Login({ onSignIn }) {
             {tabBtn("join","Join Class")}
           </div>
 
-          {tab==="join" && (
+          {(tab==="join" || (tab==="signin" && !storedCode)) && (
             <Field label="Class Code">
               <input value={classCode} onChange={e=>{setClassCode(e.target.value);setErr("");}}
                 style={inputStyle} placeholder="e.g. FALL2026-NET101" />
