@@ -110,7 +110,7 @@ export default function App() {
   // ── Load profile from Supabase after auth ──────────────────────
   const loadProfile = useCallback(async (userId) => {
     const [profileRes, membershipRes] = await Promise.all([
-      supabase.from("profiles").select("*, classes(name, code, course_id)").eq("id", userId).single(),
+      supabase.from("profiles").select("*, classes!profiles_class_id_fkey(name, code, course_id)").eq("id", userId).single(),
       supabase.from("profile_classes").select("class_id, classes(id, name, code, course_id)").eq("profile_id", userId),
     ]);
     const { data: profile, error } = profileRes;
