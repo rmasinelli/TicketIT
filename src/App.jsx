@@ -428,7 +428,7 @@ function Login({ onSignIn }) {
     const { data: cls, error: clsErr } = await supabase
       .from("classes")
       .select("id, name")
-      .eq("code", classCode.trim().toUpperCase())
+      .ilike("code", classCode.trim())
       .single();
     if (clsErr || !cls) { setErr("Class code not found. Check with your instructor."); setLoading(false); return; }
 
