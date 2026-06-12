@@ -1,6 +1,6 @@
 # Cinder by Ember
 
-> IT Help Desk Training System — EvCC
+> IT Help Desk Training System
 
 Cinder is a simulated IT help desk ticketing platform built for classroom use at EvCC. Students learn real IT workflows across three courses by submitting, managing, and resolving tickets tied to hands-on lab work. All student data is FERPA-compliant — no personally identifiable information is stored.
 
