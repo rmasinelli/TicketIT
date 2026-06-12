@@ -1,14 +1,16 @@
 # Cinder by Ember
 
-> **Supporting You** — IT Help Desk Training System
+> IT Help Desk Training System — EvCC
 
-Cinder is a simulated IT help desk ticketing platform built for classroom use at EvCC. Students learn real IT workflows across three courses by submitting, managing, and resolving tickets against hands-on lab work.
+Cinder is a simulated IT help desk ticketing platform built for classroom use at EvCC. Students learn real IT workflows across three courses by submitting, managing, and resolving tickets tied to hands-on lab work. All student data is FERPA-compliant — no personally identifiable information is stored.
+
+**Live site:** [rmasinelli.github.io/Cinder](https://rmasinelli.github.io/Cinder/)
 
 ---
 
 ## Courses
 
-| Course | Term | Cohort |
+| Course | Term | Track |
 |---|---|---|
 | 🌐 Networking Fundamentals | Fall | NET + HW |
 | 🖥 Hardware Essentials | Fall | NET + HW |
@@ -20,22 +22,23 @@ Networking and Hardware are cohorted — students take both simultaneously in Fa
 
 ## How It Works
 
-**Lecture day (Day 1):** Instructor introduces the week's concept. Students take notes in their physical lab book. Instructor activates the week's lab scenario in Cinder — students receive an inbox notification.
+**Before lab day:** Instructor logs into Cinder, goes to Lab Manager, selects the week's scenario, and clicks **Push to Students**. Tickets are instantly assigned to every enrolled student.
 
-**Lab day (Day 2):** Students log in and see their assigned lab ticket front-and-center. The ticket is the lab instruction. Students work through the lab using physical equipment, document their steps as ticket notes, and resolve the ticket when done.
+**Lab day:** Students log in and open **My Labs** to see their assigned ticket. The ticket contains the lab instructions. Students work through the lab on physical equipment, document every step in the built-in **Lab Documentation** editor, and update their ticket status as they progress.
 
 ---
 
 ## Features
 
-- **Ticket System** — Submit, assign, and resolve tickets with SLA timers and priority levels
-- **Lab Manager** — Instructor activates lab scenarios week by week, assigns to individuals or broadcasts to the whole class
-- **Knowledge Base** — Students submit draft articles, techs and admins publish them; builds a living class reference over the quarter
-- **Incident Response** — Full PICERL lifecycle tracking (Prepare → Identify → Contain → Eradicate → Recover → Lessons Learned) for Cyber course
-- **Inbox** — Simulated email notifications for ticket assignments, status changes, and lab activations
-- **Role-based access** — Student, Tech, and Admin roles with different views and permissions
-- **SLA Timers** — Live countdown timers per priority level; breached tickets surface to the top of the queue
-- **Cross-course tickets** — Labs in weeks 8 and 10 explicitly link Networking and Hardware work
+- **Supabase Auth** — Students enroll with a class code and a self-chosen alias. No email, no real name, no student ID stored (FERPA-compliant).
+- **Lab Manager** — Instructor pushes weekly lab scenarios to all students (or select individuals/pairs) with one click.
+- **My Labs** — Students see their assigned tickets and write lab documentation that saves to the cloud, accessible from any device.
+- **Lab Documentation** — Per-ticket notes editor for students to record troubleshooting steps, commands, observations, and resolutions.
+- **Ticket System** — Submit, assign, and resolve tickets with SLA timers and priority levels.
+- **Knowledge Base** — Students submit draft articles; admins publish them. Builds a living class reference over the quarter.
+- **Incident Response** — Full PICERL lifecycle tracking for the Cybersecurity course.
+- **Inbox** — Notifications for ticket assignments and status changes.
+- **Role-based access** — Student and Admin roles with appropriate views and permissions.
 
 ---
 
@@ -43,60 +46,84 @@ Networking and Hardware are cohorted — students take both simultaneously in Fa
 
 | Role | Can Do |
 |---|---|
-| **Student** | Submit tickets, view own tickets, post notes, read KB, submit KB drafts |
-| **Tech** | Everything above + manage queue, assign tickets, publish KB articles |
-| **Admin / Instructor** | Everything above + Lab Manager, user management, reset data |
+| **Student** | View My Labs, write lab documentation, submit tickets, view own tickets, read KB |
+| **Admin / Instructor** | Everything above + Lab Manager (push assignments), view all students, manage classes |
 
 ---
 
-## Demo Logins
+## Auth Flow (FERPA-Safe)
 
-| Role | Email | Password |
-|---|---|---|
-| Student (Net/HW) | arivera@ember.io | student123 |
-| Student (Cyber) | mlee@ember.io | student123 |
-| Technician | storres@ember.io | tech123 |
-| Instructor | instructor@ember.io | admin123 |
+No personally identifiable information is stored at any point.
 
-> ⚠️ Change all passwords in `src/data/seeds.js` before sharing with students.
+**First time (Join Class):**
+1. Student enters the class enrollment code given by the instructor
+2. Student picks any alias — does not have to be their real name
+3. Student selects their track (Networking+Hardware or Cybersecurity)
+4. Student sets a password (6+ characters)
+
+**Returning (Sign In):**
+- Alias + password only. Class code is remembered on the device after first login.
+- On a new device, the class code field reappears once, then is cached.
+
+**Instructor setup:**
+1. Create a class in Supabase → Table Editor → `classes` (set `name` and `code`)
+2. Sign up via Join Class using that code
+3. In Supabase → Table Editor → `profiles`, change your `role` to `admin`
 
 ---
 
 ## Project Structure
 
 ```
-cinder/
-  index.html              ← app entry point
-  vite.config.js          ← Vite config (update base to match repo name)
-  package.json            ← dependencies and scripts
+Cinder/
+  index.html                ← Vite entry point (source, not built)
+  vite.config.js            ← base path must match repo name
+  package.json
   src/
-    main.jsx              ← React entry point
-    App.jsx               ← all UI components and application logic
+    main.jsx                ← React entry point
+    App.jsx                 ← all UI components and application logic
+    lib/
+      supabase.js           ← Supabase client (URL + anon key)
     data/
-      constants.js        ← SLA targets, colors, priorities, IR phases
-      courses.js          ← course definitions and categories
-      scenarios.js        ← all 30 lab scenarios (edit here each quarter)
-      seeds.js            ← default users, tickets, KB articles, incidents
+      constants.js          ← SLA targets, colors, priorities, IR phases
+      courses.js            ← course definitions and categories
+      scenarios.js          ← all 30 lab scenarios (edit here each quarter)
+      seeds.js              ← fallback seed data for non-auth views
+  supabase-schema.sql       ← initial database schema
+  supabase-patch-1.sql      ← cohort column + public class read policy
+  supabase-patch-2.sql      ← fix recursive RLS on profiles
+  supabase-patch-3.sql      ← assigned_tickets column updates
+  supabase-patch-4.sql      ← admin insert policies + lab_notes unique constraint
 ```
 
 **Where to make common changes:**
 
-| What you want to change | File |
+| What | File |
 |---|---|
 | Lab scenario descriptions | `src/data/scenarios.js` |
 | SLA targets (hours) | `src/data/constants.js` |
 | Course names or categories | `src/data/courses.js` |
-| Seed users or KB articles | `src/data/seeds.js` |
-| UI components or logic | `src/App.jsx` |
+| Supabase connection | `src/lib/supabase.js` |
+| UI or logic | `src/App.jsx` |
 
 ---
 
-## Setup
+## Database Tables (Supabase)
 
-### Prerequisites
-- [Node.js](https://nodejs.org) (LTS version)
-- [Git](https://git-scm.com)
-- GitHub account
+| Table | Purpose |
+|---|---|
+| `classes` | Class name and enrollment code |
+| `profiles` | Student/admin alias, role, track, class — no PII |
+| `lab_assignments` | Instructor push events (one per week per class) |
+| `assigned_tickets` | Student ↔ scenario link with status |
+| `lab_notes` | Student documentation per assigned ticket |
+| `ticket_templates` | Reserved for future scenario management |
+
+---
+
+## Deployment
+
+Deployments are automated via GitHub Actions. Any push to `main` triggers a build and deploys to the `gh-pages` branch.
 
 ### Local Development
 
@@ -105,105 +132,65 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/TicketIT/` in your browser.
+Open `http://localhost:5173/Cinder/` in your browser.
 
-### Deploy to GitHub Pages
+### Manual Deploy (if needed)
 
-```bash
-# First time setup — build and push to gh-pages branch
-npm run build
-git --work-tree dist add --all
-git --work-tree dist commit -m "Deploy"
-git push origin gh-pages --force
-git checkout main
-```
+Push to `main` — the GitHub Actions workflow handles the rest.
 
-Then in GitHub → Settings → Pages → set branch to **gh-pages**.
-
-Your live URL: `https://yourusername.github.io/TicketIT/`
-
-### Subsequent Deploys
-
-After making changes:
-
-```bash
-npm run build
-git --work-tree dist add --all
-git --work-tree dist commit -m "describe your change"
-git push origin gh-pages --force
-git checkout main
-```
+If the workflow isn't set up, go to `.github/workflows/deploy.yml`.
 
 ---
 
 ## 30 Lab Scenarios
 
 ### Networking Fundamentals
-| Week | Title | Role | Mode |
-|---|---|---|---|
-| 1 | Identify Cable Types in the Lab | User | Broadcast |
-| 2 | Connect Two PCs via Unmanaged Switch | Tech | Broadcast |
-| 3 | Basic Cisco Switch Configuration | Tech | Individual |
-| 4 | VLAN Setup and Inter-VLAN Routing | Tech | Pairs |
-| 5 | Configure a Cisco Router — Basic Routing | Tech | Broadcast |
-| 6 | Wireless Access Point Setup and Troubleshooting | Tech | Individual |
-| 7 | Wireshark Packet Capture Analysis | Tech | Broadcast |
-| 8 | ↔ Cross-Course: Network the PC You Built | Tech | Individual |
-| 9 | Network Fault Simulation and Ticket Escalation | Admin | Broadcast |
-| 10 | ↔ Full Network Build — Capstone | Admin | Teams |
+| Week | Title | Mode |
+|---|---|---|
+| 1 | Identify Cable Types in the Lab | Broadcast |
+| 2 | Connect Two PCs via Unmanaged Switch | Broadcast |
+| 3 | Basic Cisco Switch Configuration | Individual |
+| 4 | VLAN Setup and Inter-VLAN Routing | Pairs |
+| 5 | Configure a Cisco Router — Basic Routing | Broadcast |
+| 6 | Wireless Access Point Setup and Troubleshooting | Individual |
+| 7 | Diagnose a Broken Network Path | Individual |
+| 8 | Link Aggregation and Redundancy (Cross-course) | Pairs |
+| 9 | Network Monitoring and Baselining | Broadcast |
+| 10 | Full Network Build from Scratch (Cross-course) | Teams |
 
 ### Hardware Essentials
-| Week | Title | Role | Mode |
-|---|---|---|---|
-| 1 | Component Identification Inventory | User | Broadcast |
-| 2 | POST Failure — Diagnose and Document | Tech | Pairs |
-| 3 | PC Build from Components | Tech | Individual |
-| 4 | OS Installation and Driver Management | Tech | Individual |
-| 5 | BIOS/UEFI Exploration and Configuration | Tech | Broadcast |
-| 6 | Laptop Disassembly and RAM/Storage Upgrade | Tech | Pairs |
-| 7 | Peripheral Troubleshooting — USB and Display | Tech | Individual |
-| 8 | ↔ Cross-Course: Prep Your PC for Network Integration | Tech | Individual |
-| 9 | Hardware Fault Introduction and Diagnosis | Admin | Broadcast |
-| 10 | ↔ Full Workstation Deployment — Capstone | Admin | Teams |
+| Week | Title | Mode |
+|---|---|---|
+| 1 | PC Component Identification | Broadcast |
+| 2 | POST Error Diagnosis | Individual |
+| 3 | RAM and Storage Benchmarking | Individual |
+| 4 | OS Installation and Driver Setup | Individual |
+| 5 | BIOS Configuration and Boot Order | Individual |
+| 6 | Laptop Disassembly and Reassembly | Pairs |
+| 7 | Peripheral Troubleshooting | Individual |
+| 8 | NIC Configuration and Network Integration (Cross-course) | Pairs |
+| 9 | System Imaging and Cloning | Broadcast |
+| 10 | Workstation Deployment (Cross-course) | Teams |
 
 ### Cybersecurity Fundamentals
-| Week | Title | Role | Mode |
-|---|---|---|---|
-| 1 | Security Audit — Your Own Lab PC | User | Broadcast |
-| 2 | Network Reconnaissance with Nmap | Tech | Broadcast |
-| 3 | Password Policy Audit and Hardening | Tech | Individual |
-| 4 | Hak5 WiFi Pineapple — Recon and Awareness | Tech | Broadcast |
-| 5 | Vulnerability Scanning with OpenVAS or Nessus | Tech | Pairs |
-| 6 | Incident Response — Simulated Malware Alert | Tech | Broadcast |
-| 7 | Hak5 Rubber Ducky — Physical Attack Awareness | Tech | Broadcast |
-| 8 | Firewall Rule Audit and Hardening | Tech | Individual |
-| 9 | Full Incident Simulation — Red vs Blue | Admin | Teams |
-| 10 | Security Hardening Capstone — Full Environment | Admin | Teams |
-
-↔ = Cross-course lab (references both Networking and Hardware)
+| Week | Title | Mode |
+|---|---|---|
+| 1 | Security Audit of a Workstation | Individual |
+| 2 | Access Control and User Permissions | Individual |
+| 3 | Vulnerability Scanning with Nmap | Individual |
+| 4 | Suspicious Activity Investigation | Individual |
+| 5 | Firewall Rule Configuration | Pairs |
+| 6 | Phishing Simulation and Analysis | Broadcast |
+| 7 | Log Analysis and Threat Detection | Individual |
+| 8 | Incident Response — Ransomware Scenario | Teams |
+| 9 | Forensics: Recovering Deleted Evidence | Pairs |
+| 10 | Full Security Assessment Report | Individual |
 
 ---
 
-## Brand
+## Tech Stack
 
-**Company:** Ember — boutique IT specialist
-**Product:** Cinder by Ember
-**Tagline:** Supporting You
-**Personality:** Cozy, craft, trustworthy, reliable
-
-| Token | Value |
-|---|---|
-| Amber Warm (accent) | `#E8922E` |
-| Black (background) | `#0D0D0D` |
-| Charcoal Deep (surface) | `#1A1A1A` |
-| Charcoal (border) | `#242424` |
-| White (text) | `#F0EDE8` |
-| Display font | Raleway |
-| Body font | Inter |
-| Mono font | JetBrains Mono |
-
----
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md)
+- **React 18** + **Vite 5**
+- **Supabase** — Auth + Postgres database
+- **GitHub Pages** — Hosting (auto-deployed via GitHub Actions)
+- **gh-pages** npm package — Build artifact publishing
