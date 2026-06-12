@@ -323,8 +323,9 @@ export default function App() {
 // LOGIN
 // ═══════════════════════════════════════════════════════════════
 function Login({ onSignIn }) {
-  const [tab, setTab]           = useState("signin"); // "signin" | "join"
-  const [classCode, setClassCode] = useState("");
+  const storedCode = localStorage.getItem("cinder:classCode") || "";
+  const [tab, setTab]           = useState("signin");
+  const [classCode, setClassCode] = useState(storedCode);
   const [alias, setAlias]       = useState("");
   const [pass, setPass]         = useState("");
   const [confirm, setConfirm]   = useState("");
@@ -338,10 +339,11 @@ function Login({ onSignIn }) {
 
   async function handleSignIn() {
     setErr(""); setLoading(true);
-    if (!classCode.trim() || !alias.trim() || !pass) { setErr("All fields required."); setLoading(false); return; }
-    const email = makeEmail(alias.trim(), classCode.trim());
+    if (!alias.trim() || !pass) { setErr("Alias and password required."); setLoading(false); return; }
+    if (!storedCode) { setErr("No class code found — use Join Class on a new device."); setLoading(false); return; }
+    const email = makeEmail(alias.trim(), storedCode);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) { setErr("Invalid class code, alias, or password."); setLoading(false); return; }
+    if (error) { setErr("Invalid alias or password."); setLoading(false); return; }
     const profile = await onSignIn(data.user.id);
     if (!profile) setErr("Account found but profile missing — contact your instructor.");
     setLoading(false);
@@ -382,7 +384,9 @@ function Login({ onSignIn }) {
       cohort,
     });
     if (profErr) { setErr("Account created but profile failed. Contact your instructor."); setLoading(false); return; }
-    // onAuthStateChange will pick up the new session automatically
+    localStorage.setItem("cinder:classCode", classCode.trim().toUpperCase());
+    const profile = await onSignIn(data.user.id);
+    if (!profile) setErr("Joined but profile missing — contact your instructor.");
     setLoading(false);
   }
 
@@ -410,10 +414,12 @@ function Login({ onSignIn }) {
             {tabBtn("join","Join Class")}
           </div>
 
-          <Field label="Class Code">
-            <input value={classCode} onChange={e=>{setClassCode(e.target.value);setErr("");}}
-              style={inputStyle} placeholder="e.g. FALL2026-NET101" />
-          </Field>
+          {tab==="join" && (
+            <Field label="Class Code">
+              <input value={classCode} onChange={e=>{setClassCode(e.target.value);setErr("");}}
+                style={inputStyle} placeholder="e.g. FALL2026-NET101" />
+            </Field>
+          )}
           <Field label="Alias">
             <input value={alias} onChange={e=>{setAlias(e.target.value);setErr("");}}
               style={inputStyle} placeholder="Choose a name — not your real name" />
