@@ -102,6 +102,8 @@ export default function App() {
   const [view,setView]             = useState("dashboard");
   const [selected,setSelected]     = useState(null);
   const [toast,setToast]           = useState(null);
+  const [classStudents,setClassStudents] = useState([]);
+  const [assignedTickets,setAssignedTickets] = useState([]);
 
   // ── Load profile from Supabase after auth ──────────────────────
   const loadProfile = useCallback(async (userId) => {
@@ -173,6 +175,64 @@ export default function App() {
   async function logout() {
     await supabase.auth.signOut();
     setSession(null); setView("dashboard"); setSelected(null);
+    setClassStudents([]); setAssignedTickets([]);
+  }
+
+  // ── Load class students (admin) or assigned tickets (student) after login ──
+  useEffect(()=>{
+    if (!session) return;
+    if (session.role === "admin") {
+      supabase.from("profiles").select("*")
+        .eq("class_id", session.class_id).eq("role","student").order("alias")
+        .then(({data})=>{ if(data) setClassStudents(data); });
+    } else {
+      supabase.from("assigned_tickets")
+        .select("*, lab_assignments(week_label, assigned_at)")
+        .eq("student_id", session.id).order("created_at",{ascending:false})
+        .then(({data})=>{ if(data) setAssignedTickets(data); });
+    }
+  },[session]);
+
+  async function pushLabAssignment(courseId, week, scenarioId, mode, studentIds) {
+    const scenario = SCENARIOS.find(s=>s.id===scenarioId);
+    if (!scenario) return;
+    const { data: assignment, error } = await supabase.from("lab_assignments").insert({
+      class_id: session.class_id,
+      week_label: `Week ${week} — ${scenario.title}`,
+      assigned_by: session.id,
+    }).select().single();
+    if (error || !assignment) { showToast("Failed to create assignment.","error"); return; }
+
+    // Build rows — pairs share a group_tag
+    const rows = mode==="pairs"
+      ? studentIds.reduce((acc,sid,i)=>{
+          const tag=`W${week}-pair${Math.floor(i/2)+1}`;
+          acc.push({assignment_id:assignment.id,student_id:sid,scenario_id:scenarioId,
+            course_id:courseId,week,title:`[W${week}] ${scenario.title}`,
+            description:scenario.description,priority:scenario.priority,status:"Open",group_tag:tag});
+          return acc;
+        },[])
+      : studentIds.map(sid=>({
+          assignment_id:assignment.id,student_id:sid,scenario_id:scenarioId,
+          course_id:courseId,week,title:`[W${week}] ${scenario.title}`,
+          description:scenario.description,priority:scenario.priority,status:"Open",group_tag:null,
+        }));
+
+    const {error:rowsErr} = await supabase.from("assigned_tickets").insert(rows);
+    if (rowsErr) { showToast("Push failed: "+rowsErr.message,"error"); return; }
+    showToast(`Week ${week} lab pushed to ${studentIds.length} student(s)!`);
+  }
+
+  async function saveLabNote(assignedTicketId, content) {
+    await supabase.from("lab_notes").upsert(
+      {assigned_ticket_id:assignedTicketId, student_id:session.id, content, updated_at:new Date().toISOString()},
+      {onConflict:"assigned_ticket_id,student_id"}
+    );
+  }
+
+  async function updateAssignedTicketStatus(ticketId, status) {
+    await supabase.from("assigned_tickets").update({status, ...(["Resolved","Closed"].includes(status)?{resolved_at:new Date().toISOString()}:{})}).eq("id",ticketId);
+    setAssignedTickets(prev=>prev.map(t=>t.id===ticketId?{...t,status}:t));
   }
 
   const myUnread = session ? notifs.filter(n=>n.toId===session.id&&!n.read).length : 0;
@@ -245,49 +305,14 @@ export default function App() {
       )}
       {view==="labs" && session.role==="admin" && (
         <LabManager
-          session={session} users={users} tickets={tickets} activeLabs={activeLabs}
-          onActivate={async(courseId,week,scenarioId,mode,assignees)=>{
-            const key=`${courseId}-${week}`;
-            // Create tickets for assignees
-            const scenario=SCENARIOS.find(s=>s.id===scenarioId);
-            if(!scenario) return;
-            const newAssignees={};
-            const newTickets=[...tickets];
-            for(const uid of assignees) {
-              const student=users.find(u=>u.id===uid);
-              const t={
-                id:nextId(newTickets),
-                title:`[W${week}] ${scenario.title}`,
-                courseId, categories:scenario.categories,
-                priority:scenario.priority, status:"Open",
-                submittedBy:uid, assignedTo: mode==="tech"||mode==="admin" ? uid : null,
-                description:scenario.description,
-                created:new Date().toISOString(), notes:[],
-                linkedCourse:scenario.linkedCourse||null,
-                labScenarioId:scenarioId, week,
-              };
-              newTickets.push(t);
-              newAssignees[uid]=t.id;
-            }
-            await persistTickets(newTickets);
-            const nextLabs={...activeLabs,[key]:{scenarioId,mode,assignees:newAssignees}};
-            await persistLabs(nextLabs);
-            // Notify students
-            const batch=assignees.map(uid=>makeNotif(uid,
-              `Lab Assigned: Week ${week} — ${scenario.title}`,
-              `Your Week ${week} lab for ${courseById(courseId)?.label} has been assigned.\n\nOpen your ticket to begin. Remember to document your steps in your lab book!\n\nPriority: ${scenario.priority}`,
-              newAssignees[uid]));
-            await addNotifs(batch);
-            showToast(`Lab W${week} activated for ${assignees.length} student(s).`);
-          }}
-          onDeactivate={async(courseId,week)=>{
-            const key=`${courseId}-${week}`;
-            const next={...activeLabs};
-            delete next[key];
-            await persistLabs(next);
-            showToast("Lab deactivated.");
-          }}
+          session={session} classStudents={classStudents}
+          onActivate={pushLabAssignment}
         />
+      )}
+      {view==="my-labs" && session.role==="student" && (
+        <MyLabs session={session} assignedTickets={assignedTickets}
+          onStatusChange={updateAssignedTicketStatus}
+          onSaveNote={saveLabNote} />
       )}
       {view==="admin" && session.role==="admin" && (
         <AdminPanel users={users} tickets={tickets}
@@ -475,7 +500,8 @@ function Shell({session,onLogout,view,setView,unread,children}) {
     {id:"queue",      label:"Ticket Queue", roles:["tech","admin"],           icon:"▤"},
     {id:"kb",         label:"Knowledge Base",roles:["student","tech","admin"],icon:"📖"},
     {id:"ir",         label:"Incidents",    roles:["student","tech","admin"], icon:"🚨"},
-    {id:"labs",       label:"Lab Manager",  roles:["admin"],                  icon:"🧪"},
+    {id:"my-labs",    label:"My Labs",      roles:["student"],                icon:"🧪"},
+    {id:"labs",       label:"Lab Manager",  roles:["admin"],                  icon:"🔬"},
     {id:"inbox",      label:"Inbox",        roles:["student","tech","admin"], icon:"✉"},
     {id:"admin",      label:"Admin Panel",  roles:["admin"],                  icon:"⚙"},
   ].filter(n=>n.roles.includes(session.role));
@@ -944,20 +970,17 @@ function TicketDetail({ticket,session,users,onUpdate,onBack}) {
 // ═══════════════════════════════════════════════════════════════
 // LAB MANAGER (Instructor)
 // ═══════════════════════════════════════════════════════════════
-function LabManager({session,users,tickets,activeLabs,onActivate,onDeactivate}) {
+function LabManager({session,classStudents,onActivate}) {
   const [courseTab,setCourseTab]=useState("net");
   const [expandWeek,setExpandWeek]=useState(null);
   const [assignMode,setAssignMode]=useState("broadcast");
   const [selectedStudents,setSelectedStudents]=useState([]);
+  const [pushing,setPushing]=useState(false);
 
   const course=courseById(courseTab);
-  const courseStudents=users.filter(u=>u.role==="student"&&
-    (courseTab==="cyber"?u.cohort==="cyber":u.cohort==="net-hw"));
+  const courseStudents=classStudents.filter(u=>
+    courseTab==="cyber"?u.cohort==="cyber":u.cohort!=="cyber");
   const scenarios=SEED_SCENARIOS.filter(s=>s.courseId===courseTab);
-
-  function getLabKey(week){return `${courseTab}-${week}`;}
-  function isActive(week){return !!activeLabs[getLabKey(week)];}
-  function getActiveLab(week){return activeLabs[getLabKey(week)];}
 
   function toggleStudent(uid) {
     setSelectedStudents(s=>s.includes(uid)?s.filter(x=>x!==uid):[...s,uid]);
@@ -965,19 +988,11 @@ function LabManager({session,users,tickets,activeLabs,onActivate,onDeactivate}) 
 
   async function activate(scenario) {
     const assignees=assignMode==="broadcast"?courseStudents.map(u=>u.id):selectedStudents;
-    if(assignees.length===0){return;}
+    if(assignees.length===0) return;
+    setPushing(true);
     await onActivate(courseTab,scenario.week,scenario.id,assignMode,assignees);
+    setPushing(false);
     setExpandWeek(null); setSelectedStudents([]);
-  }
-
-  // Per-week completion stats
-  function weekStats(week) {
-    const lab=getActiveLab(week);
-    if(!lab) return null;
-    const ticketIds=Object.values(lab.assignees||{});
-    const weekTickets=tickets.filter(t=>ticketIds.includes(t.id));
-    const done=weekTickets.filter(t=>["Resolved","Closed"].includes(t.status)).length;
-    return {total:ticketIds.length,done};
   }
 
   return (
@@ -1001,23 +1016,18 @@ function LabManager({session,users,tickets,activeLabs,onActivate,onDeactivate}) 
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {Array.from({length:10},(_,i)=>i+1).map(week=>{
           const scenario=scenarios.find(s=>s.week===week);
-          const active=isActive(week);
-          const stats=weekStats(week);
           const expanded=expandWeek===week;
-
           return (
-            <div key={week} style={{background:"#1A1A1A",border:`1px solid ${active?course.color+"44":"#242424"}`,borderRadius:12,overflow:"hidden"}}>
-                            {/* Row */}
+            <div key={week} style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:12,overflow:"hidden"}}>
               <div style={{display:"flex",alignItems:"center",gap:16,padding:"14px 20px",cursor:"pointer"}}
                 onClick={()=>setExpandWeek(expanded?null:week)}>
-                <div style={{width:32,height:32,borderRadius:8,background:active?course.color+"22":"#0D0D0D",
-                  border:"1px solid "+(active?course.color+"55":"#242424"),display:"flex",alignItems:"center",justifyContent:"center",
-                  fontSize:13,fontWeight:700,color:active?course.color:"#6A5848",flexShrink:0}}>
+                <div style={{width:32,height:32,borderRadius:8,background:"#0D0D0D",
+                  border:"1px solid #242424",display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:13,fontWeight:700,color:"#6A5848",flexShrink:0}}>
                   {week}
                 </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{color:active?"#EDE9E3":"#B8A898",fontSize:14,fontWeight:active?600:400,
-                    whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  <div style={{color:"#B8A898",fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                     {scenario?.title||"No scenario defined"}
                   </div>
                   {scenario&&<div style={{fontSize:11,color:"#6A5848",marginTop:2,display:"flex",gap:8,alignItems:"center"}}>
@@ -1026,78 +1036,173 @@ function LabManager({session,users,tickets,activeLabs,onActivate,onDeactivate}) 
                     {scenario.linkedCourse&&<span style={{color:"#a78bfa"}}>↔ cross-course</span>}
                   </div>}
                 </div>
-                {active&&stats&&(
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:12,color:course.color,fontWeight:700}}>{stats.done}/{stats.total} done</div>
-                    <div style={{fontSize:11,color:"#6A5848"}}>Active</div>
-                  </div>
-                )}
-                {!active&&<div style={{fontSize:11,color:"#4A3828",flexShrink:0}}>Not assigned</div>}
                 <div style={{color:"#6A5848",fontSize:12,flexShrink:0}}>{expanded?"▲":"▼"}</div>
               </div>
 
-              {/* Expanded */}
               {expanded&&scenario&&(
                 <div style={{borderTop:"1px solid #242424",padding:"20px 24px",background:"#0D0D0D"}}>
-                  <div style={{color:"#B8A898",fontSize:13,lineHeight:1.7,marginBottom:16,whiteSpace:"pre-wrap"}}>{scenario.description}</div>
-                  {active?(
-                    <div>
-                      <SectionLabel>Assignment Status</SectionLabel>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-                        {Object.entries(getActiveLab(week).assignees||{}).map(([uid,ticketId])=>{
-                          const student=users.find(u=>u.id===uid);
-                          const t=tickets.find(x=>x.id===ticketId);
-                          return (
-                            <div key={uid} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#1A1A1A",borderRadius:8,padding:"8px 14px"}}>
-                              <span style={{fontSize:13,color:"#B8A898"}}>{student?.name||uid}</span>
-                              <span>{t?badge(t.status,STATUS_COLOR[t.status]):<span style={{color:"#4A3828",fontSize:12}}>no ticket</span>}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <button onClick={()=>onDeactivate(courseTab,week)}
-                        style={{background:"#7f1d1d",border:"1px solid #ef444444",color:"#fca5a5",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:"pointer"}}>
-                        Deactivate Lab
-                      </button>
-                    </div>
-                  ):(
-                    <div>
-                      <Field label="Assignment Mode">
-                        <select value={assignMode} onChange={e=>setAssignMode(e.target.value)} style={inputStyle}>
-                          <option value="broadcast">Broadcast — everyone gets the same scenario ticket</option>
-                          <option value="individual">Individual — select specific students</option>
-                          <option value="pairs">Pairs — select students to pair up</option>
-                        </select>
-                      </Field>
-                      {assignMode!=="broadcast"&&(
-                        <Field label="Select Students">
-                          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{color:"#B8A898",fontSize:13,lineHeight:1.7,marginBottom:20,whiteSpace:"pre-wrap"}}>{scenario.description}</div>
+                  <Field label="Assignment Mode">
+                    <select value={assignMode} onChange={e=>setAssignMode(e.target.value)} style={inputStyle}>
+                      <option value="broadcast">Broadcast — all enrolled students</option>
+                      <option value="individual">Individual — select specific students</option>
+                      <option value="pairs">Pairs — students work in pairs</option>
+                    </select>
+                  </Field>
+                  {assignMode!=="broadcast"&&(
+                    <Field label={`Select Students (${selectedStudents.length} selected)`}>
+                      {courseStudents.length===0
+                        ? <div style={{color:"#6A5848",fontSize:12}}>No students enrolled in this track yet.</div>
+                        : <div style={{display:"flex",flexDirection:"column",gap:6}}>
                             {courseStudents.map(u=>(
                               <label key={u.id} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"7px 12px",
                                 background:selectedStudents.includes(u.id)?"#1A1A1A":"transparent",
                                 borderRadius:6,border:"1px solid "+(selectedStudents.includes(u.id)?"#242424":"transparent")}}>
                                 <input type="checkbox" checked={selectedStudents.includes(u.id)} onChange={()=>toggleStudent(u.id)} style={{accentColor:course.color}} />
-                                <span style={{fontSize:13,color:"#B8A898"}}>{u.name}</span>
+                                <span style={{fontSize:13,color:"#B8A898"}}>{u.alias}</span>
                               </label>
                             ))}
                           </div>
-                        </Field>
-                      )}
-                      <button onClick={()=>activate(scenario)}
-                        style={{...btnPrimary,background:course.color,
-                          opacity:(assignMode==="broadcast"||selectedStudents.length>0)?1:0.4}}
-                        disabled={assignMode!=="broadcast"&&selectedStudents.length===0}>
-                        Activate Week {week} Lab →
-                      </button>
-                      {assignMode==="broadcast"&&<div style={{fontSize:11,color:"#6A5848",marginTop:6,textAlign:"center"}}>Will assign to all {courseStudents.length} enrolled students</div>}
-                    </div>
+                      }
+                    </Field>
                   )}
+                  <button onClick={()=>activate(scenario)}
+                    style={{...btnPrimary,background:course.color,
+                      opacity:(pushing||(!assignMode==="broadcast"&&selectedStudents.length===0))?0.5:1}}
+                    disabled={pushing||(assignMode!=="broadcast"&&selectedStudents.length===0)}>
+                    {pushing?"Pushing…":`Push Week ${week} Lab to Students →`}
+                  </button>
+                  {assignMode==="broadcast"&&<div style={{fontSize:11,color:"#6A5848",marginTop:8,textAlign:"center"}}>
+                    {courseStudents.length} student(s) enrolled in this track
+                  </div>}
                 </div>
               )}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAB NOTES
+// ═══════════════════════════════════════════════════════════════
+function LabNotes({assignedTicketId, studentId, onSave}) {
+  const [content,setContent]=useState("");
+  const [saved,setSaved]=useState(true);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    supabase.from("lab_notes").select("content")
+      .eq("assigned_ticket_id",assignedTicketId).eq("student_id",studentId)
+      .maybeSingle()
+      .then(({data})=>{ if(data) setContent(data.content||""); setLoading(false); });
+  },[assignedTicketId,studentId]);
+
+  async function handleSave() {
+    await onSave(assignedTicketId,content);
+    setSaved(true);
+  }
+
+  if(loading) return <div style={{color:"#6A5848",fontSize:13}}>Loading notes…</div>;
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <SectionLabel>Lab Documentation</SectionLabel>
+        {!saved&&<span style={{fontSize:11,color:"#f59e0b"}}>Unsaved changes</span>}
+      </div>
+      <textarea value={content} onChange={e=>{setContent(e.target.value);setSaved(false);}}
+        style={{...inputStyle,minHeight:280,resize:"vertical",lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace",fontSize:12}}
+        placeholder={"Document your troubleshooting process here.\n\nInclude:\n• Steps you took\n• Commands run\n• What you observed\n• How you resolved the issue\n• What you learned"} />
+      <button onClick={handleSave} disabled={saved}
+        style={{...btnPrimary,marginTop:12,opacity:saved?0.5:1,background:saved?"#166534":"#E8922E",color:"#F0EDE8"}}>
+        {saved?"Notes Saved ✓":"Save Notes"}
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MY LABS (student view)
+// ═══════════════════════════════════════════════════════════════
+function MyLabs({session, assignedTickets, onStatusChange, onSaveNote}) {
+  const [selected,setSelected]=useState(null);
+  const ticket=assignedTickets.find(t=>t.id===selected);
+
+  const statusOptions=["Open","In Progress","Resolved","Closed"];
+
+  if(selected&&ticket) {
+    const course=courseById(ticket.course_id);
+    return (
+      <div style={{maxWidth:800}}>
+        <button onClick={()=>setSelected(null)}
+          style={{background:"none",border:"1px solid #242424",color:"#8A7868",borderRadius:6,
+            padding:"6px 14px",fontSize:12,cursor:"pointer",marginBottom:20}}>
+          ← Back to My Labs
+        </button>
+        <PageTitle title={ticket.title} sub={ticket.lab_assignments?.week_label||`Week ${ticket.week}`} />
+        <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+          {badge(ticket.status,STATUS_COLOR[ticket.status])}
+          {badge(ticket.priority,PRIORITY_COLOR[ticket.priority])}
+          {course&&<span style={{fontSize:12,color:course.color}}>{course.icon} {course.label}</span>}
+          {ticket.group_tag&&badge("Group: "+ticket.group_tag,"#a78bfa")}
+        </div>
+
+        <Card style={{marginBottom:16}}>
+          <SectionLabel>Scenario</SectionLabel>
+          <div style={{color:"#B8A898",fontSize:13,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{ticket.description}</div>
+        </Card>
+
+        <Card style={{marginBottom:16}}>
+          <Field label="Update Status">
+            <select value={ticket.status}
+              onChange={e=>onStatusChange(ticket.id,e.target.value)}
+              style={inputStyle}>
+              {statusOptions.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+        </Card>
+
+        <Card>
+          <LabNotes assignedTicketId={ticket.id} studentId={session.id} onSave={onSaveNote} />
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{maxWidth:800}}>
+      <PageTitle title="My Labs" sub={`${assignedTickets.length} lab(s) assigned to you`} />
+      {assignedTickets.length===0
+        ? <EmptyState msg="No labs assigned yet. Check back on lab day!" />
+        : <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {assignedTickets.map(t=>{
+              const course=courseById(t.course_id);
+              const isOpen=!["Resolved","Closed"].includes(t.status);
+              return (
+                <div key={t.id} onClick={()=>setSelected(t.id)}
+                  style={{background:"#1A1A1A",border:`1px solid ${isOpen?"#E8922E44":"#242424"}`,
+                    borderRadius:12,padding:"18px 20px",cursor:"pointer",display:"flex",
+                    alignItems:"center",gap:16}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor="#E8922E88"}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor=isOpen?"#E8922E44":"#242424"}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:600,color:"#F0EDE8",marginBottom:6}}>{t.title}</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      {badge(t.status,STATUS_COLOR[t.status])}
+                      {badge(t.priority,PRIORITY_COLOR[t.priority])}
+                      {course&&<span style={{fontSize:11,color:course.color}}>{course.icon} {course.label}</span>}
+                      {t.group_tag&&<span style={{fontSize:11,color:"#a78bfa"}}>👥 {t.group_tag}</span>}
+                    </div>
+                  </div>
+                  <div style={{color:"#6A5848",fontSize:12,flexShrink:0}}>Open →</div>
+                </div>
+              );
+            })}
+          </div>
+      }
     </div>
   );
 }
