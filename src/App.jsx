@@ -203,7 +203,7 @@ export default function App() {
       ]).then(([classesRes, junctionRes, legacyRes]) => {
         // Store all classes on session so LabManager tabs work too
         if (classesRes.data) {
-          setSession(s => ({...s, classes: classesRes.data}));
+          setSession(s => s ? ({...s, classes: classesRes.data}) : s);
         }
         const seen = new Set();
         const all = [];
