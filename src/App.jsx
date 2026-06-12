@@ -380,8 +380,8 @@ export default function App() {
         />
       )}
       {view==="admin" && session.role==="admin" && (
-        <AdminPanel users={users} tickets={tickets}
-          onSaveUsers={persistUsers}
+        <AdminPanel session={session} classStudents={classStudents}
+          tickets={tickets}
           onSaveTickets={persistTickets}
           showToast={showToast} />
       )}
@@ -1606,53 +1606,75 @@ function Inbox({session,notifs,onRead,onReadAll,onOpen}) {
   );
 }
 
-function AdminPanel({users,tickets,onSaveUsers,onSaveTickets,showToast}) {
-  const [newUser,setNewUser]=useState({name:"",email:"",role:"student",password:"",cohort:"net-hw"});
-  async function addUser(){
-    if(!newUser.name||!newUser.email||!newUser.password) return;
-    await onSaveUsers([...users,{...newUser,id:"u"+Date.now()}]);
-    setNewUser({name:"",email:"",role:"student",password:"",cohort:"net-hw"});
-    showToast("User created.");
-  }
-  async function deleteUser(id){await onSaveUsers(users.filter(u=>u.id!==id)); showToast("Removed.");}
+function AdminPanel({session, classStudents, tickets, onSaveTickets, showToast}) {
+  const myClasses = session.classes || [];
+
+  // Group students by class
+  const byClass = myClasses.map(cls => ({
+    cls,
+    students: classStudents.filter(s => s.enrolled_class_id === cls.id),
+  }));
+
+  const totalStudents = classStudents.length;
+
   return (
-    <div style={{maxWidth:800}}>
-      <PageTitle title="Admin Panel" />
-      <div style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:12,padding:24}}>
-        <SectionLabel>All Users ({users.length})</SectionLabel>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid #242424"}}>{["Name","Email","Role","Cohort",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:"#6A5848",fontSize:11,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>
-            {users.map(u=>(
-              <tr key={u.id} style={{borderBottom:"1px solid #1A1A1A"}}>
-                <td style={{padding:"8px",color:"#EDE9E3"}}>{u.name}</td>
-                <td style={{padding:"8px",color:"#8A7868",fontSize:12}}>{u.email}</td>
-                <td style={{padding:"8px"}}>{badge(u.role,ROLE_COLOR[u.role])}</td>
-                <td style={{padding:"8px",color:"#6A5848",fontSize:12}}>{u.cohort==="all"?"All":u.cohort==="net-hw"?"NET+HW":"Cyber"}</td>
-                <td style={{padding:"8px"}}><button onClick={()=>deleteUser(u.id)} style={{background:"none",border:"none",color:"#6A5848",cursor:"pointer"}}>x</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div style={{marginTop:20,borderTop:"1px solid #242424",paddingTop:20}}>
-          <SectionLabel>Add User</SectionLabel>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <Field label="Name"><input value={newUser.name} onChange={e=>setNewUser(u=>({...u,name:e.target.value}))} style={inputStyle} placeholder="Full name" /></Field>
-            <Field label="Email"><input value={newUser.email} onChange={e=>setNewUser(u=>({...u,email:e.target.value}))} style={inputStyle} placeholder="email@ember.io" /></Field>
-            <Field label="Password"><input value={newUser.password} onChange={e=>setNewUser(u=>({...u,password:e.target.value}))} style={inputStyle} placeholder="Temp password" /></Field>
-            <Field label="Role"><select value={newUser.role} onChange={e=>setNewUser(u=>({...u,role:e.target.value}))} style={inputStyle}><option value="student">Student</option><option value="tech">Tech</option><option value="admin">Admin</option></select></Field>
-            <Field label="Cohort"><select value={newUser.cohort} onChange={e=>setNewUser(u=>({...u,cohort:e.target.value}))} style={inputStyle}><option value="net-hw">Networking + Hardware</option><option value="cyber">Cybersecurity</option><option value="all">All</option></select></Field>
-          </div>
-          <button onClick={addUser} style={{...btnPrimary,marginTop:12}}>Add User</button>
+    <div style={{maxWidth:900}}>
+      <PageTitle title="Admin Panel" sub={`${totalStudents} enrolled student${totalStudents!==1?"s":""} across ${myClasses.length} class${myClasses.length!==1?"es":""}`} />
+
+      {/* Enrolled Students by Class */}
+      {byClass.map(({cls, students}) => (
+        <div key={cls.id} style={{marginBottom:28}}>
+          <Card>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div>
+                <div style={{fontFamily:"'Raleway',sans-serif",fontWeight:700,fontSize:16,color:"#F0EDE8"}}>{cls.name}</div>
+                <div style={{fontSize:12,color:"#6A5848",marginTop:2}}>Code: <span style={{color:"#B8A898",fontFamily:"monospace"}}>{cls.code}</span>{cls.course_id && <span style={{marginLeft:8,color:"#8A7868"}}>· {cls.course_id.toUpperCase()}</span>}</div>
+              </div>
+              <div style={{fontSize:13,color:"#6A5848"}}>{students.length} student{students.length!==1?"s":""}</div>
+            </div>
+            {students.length === 0
+              ? <div style={{color:"#4A3828",fontSize:13,padding:"12px 0"}}>No students enrolled yet.</div>
+              : (
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid #242424"}}>
+                      {["Alias","Track",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:"#6A5848",fontSize:11,textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {students.map(s => (
+                      <tr key={s.id+cls.id} style={{borderBottom:"1px solid #1A1A1A"}}>
+                        <td style={{padding:"9px 8px",color:"#EDE9E3",fontFamily:"monospace"}}>{s.alias}</td>
+                        <td style={{padding:"9px 8px",color:"#8A7868",fontSize:12}}>{s.cohort||"—"}</td>
+                        <td style={{padding:"9px 8px",textAlign:"right"}}>
+                          {badge("student", ROLE_COLOR["student"])}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            }
+          </Card>
         </div>
-        <div style={{marginTop:24,borderTop:"1px solid #242424",paddingTop:20}}>
-          <SectionLabel>Danger Zone</SectionLabel>
-          <div style={{background:"#0D0D0D",border:"1px solid #7f1d1d44",borderRadius:8,padding:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div><div style={{color:"#fca5a5",fontSize:13,fontWeight:600}}>Reset Ticket Data</div><div style={{color:"#6A5848",fontSize:12}}>Wipes all tickets and reloads seed data.</div></div>
-            <button onClick={async()=>{await onSaveTickets(SEED_TICKETS); showToast("Reset.");}} style={{background:"#7f1d1d",border:"none",color:"#fca5a5",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:"pointer"}}>Reset</button>
+      ))}
+
+      {myClasses.length === 0 && (
+        <EmptyState msg="No classes found. Make sure your account has a class assigned in Supabase." />
+      )}
+
+      {/* Danger Zone */}
+      <Card style={{marginTop:8}}>
+        <SectionLabel>Danger Zone</SectionLabel>
+        <div style={{background:"#0D0D0D",border:"1px solid #7f1d1d44",borderRadius:8,padding:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{color:"#fca5a5",fontSize:13,fontWeight:600}}>Reset Ticket Data</div>
+            <div style={{color:"#6A5848",fontSize:12}}>Wipes all tickets and reloads seed data.</div>
           </div>
+          <button onClick={async()=>{await onSaveTickets(SEED_TICKETS); showToast("Reset.");}}
+            style={{background:"#7f1d1d",border:"none",color:"#fca5a5",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:"pointer"}}>Reset</button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
