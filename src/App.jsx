@@ -73,7 +73,7 @@ function Card({children,style={}}){return <div style={{background:"#1A1A1A",bord
 function Field({label,children}){return(<div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,color:"#6A5848",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>{label}</label>{children}</div>);}
 function DetailRow({label,val}){return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{fontSize:12,color:"#6A5848"}}>{label}</span><span style={{fontSize:13,color:"#B8A898"}}>{val}</span></div>);}
 function EmptyState({msg}){return <div style={{background:"#1A1A1A",border:"1px solid #242424",borderRadius:12,padding:40,textAlign:"center",color:"#6A5848",fontSize:14}}>{msg}</div>;}
-function Toast({msg,type}){return(<div style={{position:"fixed",bottom:24,right:24,background:type==="success"?"#166534":"#7f1d1d",border:"1px solid "+(type==="success"?"#22c55e44":"#ef444444"),color:type==="success"?"#86efac":"#fca5a5",borderRadius:8,padding:"12px 20px",fontSize:13,zIndex:9999,fontFamily:"'Inter',sans-serif",color:"#F0EDE8"}}>{msg}</div>);}
+function Toast({msg,type}){return(<div style={{position:"fixed",bottom:24,right:24,background:type==="success"?"#166534":"#7f1d1d",border:"1px solid "+(type==="success"?"#22c55e44":"#ef444444"),color:type==="success"?"#86efac":"#fca5a5",borderRadius:8,padding:"12px 20px",fontSize:13,zIndex:9999,fontFamily:"'Inter',sans-serif"}}>{msg}</div>);}
 
 
 // ═══════════════════════════════════════════════════════════════
